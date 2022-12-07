@@ -10,7 +10,7 @@
     <packaging>pom</packaging>
     <modules>
         <module>server</module>
-        <module>Master</module>
+        <module>HMaster</module>
         <module>RegionServer</module>
     </modules>
 
