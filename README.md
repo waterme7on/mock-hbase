@@ -20,3 +20,9 @@
 ## TODO
 
 ...
+
+## Contribution
+
+1. Code
+2. Open a pull request
+3. Merge
