@@ -5,14 +5,14 @@
 ## Architecture
 
 - RegionServer
-  - HLog
-  - MemStore
-  - HFile
-  - RPC Server
+    - HLog
+    - MemStore
+    - HFile
+    - RPC Server
 - HMaster
-  - RegionServerManager
-    - RegionConfiguration
-    - RegionServerScheduler
+    - RegionServerManager
+        - RegionConfiguration
+        - RegionServerScheduler
 - ZookeeperHandler
 - HDFSHandler
 - YCSBApi
