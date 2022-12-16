@@ -9,6 +9,7 @@ import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.log.HBaseMarkers;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Addressing;
+import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
@@ -16,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.lang.management.MemoryType;
 import java.net.InetAddress;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
@@ -29,6 +31,9 @@ public class HMaster extends HRegionServer implements MasterServices {
 
     /** jetty server for master to redirect requests to regionserver infoServer */
     private Server masterJettyServer;
+    // file system manager for the master FS operations
+    private MasterFileSystem fileSystemManager;
+    private MasterWalManager walManager;
 
     // Manager and zk listener for master election
     private final ActiveMasterManager activeMasterManager;
@@ -165,13 +170,49 @@ public class HMaster extends HRegionServer implements MasterServices {
         return connector.getLocalPort();
     }
 
+
+    /**
+     * Finish initialization of HMaster after becoming the primary master.
+     *
+     * The startup order is a bit complicated but very important, do not change it unless you know
+     * what you are doing.
+     *
+     * Publish cluster id
+     *
+     * Here comes the most complicated part - initialize server manager, assignment manager and
+     * region server tracker
+     * - Create master local region
+     * - Create server manager
+     * - Wait for meta to be initialized if necessary, start table state manager.
+     * - Wait for enough region servers to check-in
+     * - Let assignment manager load data from meta and construct region states
+     * - Start all other things such as chore services, etc
+     *
+     *
+     * Notice that now we will not schedule a special procedure to make meta online(unless the first
+     * time where meta has not been created yet), we will rely on SCP to bring meta online.
+     */
     private void finishActiveMasterInitialization(MonitoredTask status)
             throws IOException, InterruptedException, KeeperException {
+        /*
+         * We are active master now... go initialize components we need to run.
+         */
+        status.setStatus("Initializing Master file system");
+        // always initialize the MemStoreLAB as we use a region to store data in master now, see
+        // localStore.
+        initializeMemStoreChunkCreator();
+        this.fileSystemManager = new MasterFileSystem(conf);
+        this.walManager = new MasterWalManager(this);
+
     }
 
     protected ActiveMasterManager createActiveMasterManager(ZKWatcher zk, ServerName sn,
                                                         org.waterme7on.hbase.Server server) throws InterruptedIOException {
         return new ActiveMasterManager(zk, sn, server);
+    }
+
+    protected void initializeMemStoreChunkCreator() {
+        // TODO: MemStoreLAB, simply leave empty now
     }
 
 
@@ -192,5 +233,10 @@ public class HMaster extends HRegionServer implements MasterServices {
     @Override
     public boolean isStopped() {
         return false;
+    }
+
+    @Override
+    public MasterFileSystem getMasterFileSystem() {
+        return this.fileSystemManager;
     }
 }

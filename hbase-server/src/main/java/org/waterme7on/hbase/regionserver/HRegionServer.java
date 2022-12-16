@@ -85,12 +85,10 @@ public class HRegionServer extends Thread implements RegionServerServices {
         return new RSRpcServices(this);
     }
 
-    @Override
     public void abort(String why, Throwable e) {
 
     }
 
-    @Override
     public boolean isAborted() {
         return false;
     }
