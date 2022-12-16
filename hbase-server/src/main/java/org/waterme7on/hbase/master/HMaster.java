@@ -13,12 +13,20 @@ import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
-
 import java.io.IOException;
 import java.net.InetAddress;
+import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
+import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
+import org.apache.hbase.thirdparty.org.eclipse.jetty.server.ServerConnector;
+//import org.eclipse.jetty.server.Server;
+//import org.eclipse.jetty.server.ServerConnector;
+
 
 public class HMaster extends HRegionServer implements MasterServices {
     private static final Logger LOG = LoggerFactory.getLogger(HMaster.class);
+
+    /** jetty server for master to redirect requests to regionserver infoServer */
+    private Server masterJettyServer;
 
     // MASTER is name of the webapp and the attribute name used stuffing this
     // instance into a web context !! AND OTHER PLACES !!
@@ -93,24 +101,23 @@ public class HMaster extends HRegionServer implements MasterServices {
             LOG.error(msg);
             throw new IOException(msg);
         }
-//
-//        // TODO
-//        masterJettyServer = new Server();
-//
-//        final ServerConnector connector = new ServerConnector(masterJettyServer);
-//        connector.setHost(addr);
-//        connector.setPort(infoPort);
-//        masterJettyServer.addConnector(connector);
-//        masterJettyServer.setStopAtShutdown(true);
-//        masterJettyServer.setHandler(HttpServer.buildGzipHandler(masterJettyServer.getHandler()));
-//
-//        try {
-//            masterJettyServer.start();
-//        } catch (Exception e) {
-//            throw new IOException("Failed to start redirecting jetty server", e);
-//        }
-//        return connector.getLocalPort();
-        return infoPort;
+
+        // TODO
+        masterJettyServer = new Server();
+
+        final ServerConnector connector = new ServerConnector(masterJettyServer);
+        connector.setHost(addr);
+        connector.setPort(infoPort);
+        masterJettyServer.addConnector(connector);
+        masterJettyServer.setStopAtShutdown(true);
+        masterJettyServer.setHandler(org.apache.hadoop.hbase.http.HttpServer.buildGzipHandler(masterJettyServer.getHandler()));
+
+        try {
+            masterJettyServer.start();
+        } catch (Exception e) {
+            throw new IOException("Failed to start redirecting jetty server", e);
+        }
+        return connector.getLocalPort();
     }
 
     @Override
