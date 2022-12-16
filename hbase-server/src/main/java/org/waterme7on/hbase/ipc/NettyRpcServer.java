@@ -7,6 +7,7 @@ import java.net.InetSocketAddress;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.regionserver.RSRpcServices;
 
 public class NettyRpcServer extends RpcServer {
     public static final Logger LOG = LoggerFactory.getLogger(NettyRpcServer.class);
@@ -28,5 +29,22 @@ public class NettyRpcServer extends RpcServer {
 
     public void stop(){
 
-    };
+    }
+
+    @Override
+    public void setRsRpcServices(RSRpcServices rsRpcServices) {
+
+    }
+
+    @Override
+    public InetSocketAddress getListenerAddress() {
+        return null;
+    }
+
+    @Override
+    public void setErrorHandler(HBaseRPCErrorHandler handler) {
+
+    }
+
+    ;
 }

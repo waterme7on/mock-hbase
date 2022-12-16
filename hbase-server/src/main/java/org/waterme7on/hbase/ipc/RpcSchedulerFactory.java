@@ -1,7 +1,7 @@
 package org.waterme7on.hbase.ipc;
 
 import org.apache.hadoop.conf.Configuration;
-import org.waterme7on.hbase.Abortable;
+import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseInterfaceAudience;
 import org.apache.yetus.audience.InterfaceAudience;

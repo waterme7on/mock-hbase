@@ -14,19 +14,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.InetAddress;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.ServerConnector;
-//import org.eclipse.jetty.server.Server;
-//import org.eclipse.jetty.server.ServerConnector;
-
+import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 
 public class HMaster extends HRegionServer implements MasterServices {
     private static final Logger LOG = LoggerFactory.getLogger(HMaster.class);
 
     /** jetty server for master to redirect requests to regionserver infoServer */
     private Server masterJettyServer;
+
+    // Manager and zk listener for master election
+    private final ActiveMasterManager activeMasterManager;
 
     // MASTER is name of the webapp and the attribute name used stuffing this
     // instance into a web context !! AND OTHER PLACES !!
@@ -42,6 +44,7 @@ public class HMaster extends HRegionServer implements MasterServices {
             LOG.info("hbase.rootdir={}, hbase.cluster.distributed={}", getDataRootDir(),
                     this.conf.getBoolean(HConstants.CLUSTER_DISTRIBUTED, false));
             this.conf.setBoolean(HConstants.USE_META_REPLICAS, false);
+            this.activeMasterManager = createActiveMasterManager(zooKeeper, serverName, this);
             span.setStatus(StatusCode.OK);
         }catch (Throwable t) {
             // Make sure we log the exception. HMaster is often started via reflection and the
@@ -119,6 +122,13 @@ public class HMaster extends HRegionServer implements MasterServices {
         }
         return connector.getLocalPort();
     }
+
+
+    protected ActiveMasterManager createActiveMasterManager(ZKWatcher zk, ServerName sn,
+                                                            org.waterme7on.hbase.Server server) throws InterruptedIOException {
+        return new ActiveMasterManager(zk, sn, server);
+    }
+
 
     @Override
     public void abort(String reason, Throwable cause) {

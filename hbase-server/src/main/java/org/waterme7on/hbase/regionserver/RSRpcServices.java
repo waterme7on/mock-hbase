@@ -1,12 +1,27 @@
 package org.waterme7on.hbase.regionserver;
 
+import com.google.protobuf.Message;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.io.ByteBuffAllocator;
+import org.apache.hadoop.hbase.net.Address;
+import org.apache.hadoop.hbase.security.User;
+import org.apache.hadoop.hbase.util.DNS;
 import org.apache.hbase.thirdparty.com.google.common.collect.ImmutableList;
+import org.apache.hadoop.hbase.Abortable;
+import org.waterme7on.hbase.ipc.*;
 import org.waterme7on.hbase.ipc.RpcServer.BlockingServiceAndInterface;
-import org.waterme7on.hbase.ipc.RpcServerInterface;
+import org.waterme7on.hbase.Server;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.master.MasterRpcServices;
+import org.waterme7on.hbase.master.HMaster;
 
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.net.BindException;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,15 +32,72 @@ public class RSRpcServices {
             "hbase.regionserver.client.executorService";
     public static final String REGIONSERVER_CLIENT_META_SERVICE_CONFIG =
             "hbase.regionserver.client.meta.executorService";
+    /** RPC scheduler to use for the region server. */
+    public static final String REGION_SERVER_RPC_SCHEDULER_FACTORY_CLASS =
+            "hbase.region.server.rpc.scheduler.factory.class";
 
     protected static final Logger LOG = LoggerFactory.getLogger(RSRpcServices.class);
     // TODO: HRegionServer
     protected final HRegionServer regionServer;
-    // final RpcServerInterface rpcServer;
+    // Server to handle client requests.
+    final RpcServerInterface rpcServer;
+    // The reference to the priority extraction function
+    private final PriorityFunction priority;
 
-    public RSRpcServices(HRegionServer regionServer) {
-        this.regionServer = regionServer;
-        // this.rpcServer = createRpcServer();
+
+    public RSRpcServices(final HRegionServer rs) throws IOException {
+        this.regionServer = rs;
+        final Configuration conf = rs.getConfiguration();
+        priority = createPriority();
+
+        final RpcSchedulerFactory rpcSchedulerFactory;
+        try {
+            rpcSchedulerFactory = getRpcSchedulerFactoryClass().asSubclass(RpcSchedulerFactory.class)
+                    .getDeclaredConstructor().newInstance();
+        } catch (NoSuchMethodException | InvocationTargetException | InstantiationException
+                 | IllegalAccessException e) {
+            throw new IllegalArgumentException(e);
+        }
+        // Server to handle client requests.
+        final InetSocketAddress initialIsa;
+        final InetSocketAddress bindAddress;
+        if (this instanceof MasterRpcServices) {
+            String hostname = DNS.getHostname(conf, DNS.ServerType.MASTER);
+            int port = conf.getInt(HConstants.MASTER_PORT, HConstants.DEFAULT_MASTER_PORT);
+            // Creation of a HSA will force a resolve.
+            initialIsa = new InetSocketAddress(hostname, port);
+            bindAddress = new InetSocketAddress(conf.get("hbase.master.ipc.address", hostname), port);
+        } else {
+            String hostname = DNS.getHostname(conf, DNS.ServerType.REGIONSERVER);
+            int port = conf.getInt(HConstants.REGIONSERVER_PORT, HConstants.DEFAULT_REGIONSERVER_PORT);
+            // Creation of a HSA will force a resolve.
+            initialIsa = new InetSocketAddress(hostname, port);
+            bindAddress =
+                    new InetSocketAddress(conf.get("hbase.regionserver.ipc.address", hostname), port);
+        }
+        if (initialIsa.getAddress() == null) {
+            throw new IllegalArgumentException("Failed resolve of " + initialIsa);
+        }
+        // Using Address means we don't get the IP too. Shorten it more even to just the host name
+        // w/o the domain.
+        final String name = rs.getProcessName() + "/"
+                + Address.fromParts(initialIsa.getHostName(), initialIsa.getPort()).toStringWithoutDomain();
+        rpcServer = createRpcServer((Server) rs, rpcSchedulerFactory, bindAddress, name);
+        rpcServer.setRsRpcServices(this);
+//        // TODO
+//        if (!(rs instanceof HMaster)) {
+//            rpcServer.setNamedQueueRecorder(rs.getNamedQueueRecorder());
+//        }
+
+        final InetSocketAddress address = rpcServer.getListenerAddress();
+        if (address == null) {
+            throw new IOException("Listener channel is closed");
+        }
+        // Set our address, however we need the final port that was given to rpcServer
+        isa = new InetSocketAddress(initialIsa.getHostName(), address.getPort());
+        rpcServer.setErrorHandler((HBaseRPCErrorHandler) this);
+        rs.setName(name);
+
     }
 
     public Configuration getConfiguration() {
@@ -52,4 +124,48 @@ public class RSRpcServices {
 //        }
         return new ImmutableList.Builder<BlockingServiceAndInterface>().addAll(bssi).build();
     }
+
+
+    final InetSocketAddress isa;
+
+    protected RpcServerInterface createRpcServer(final Server server,
+                                                 final RpcSchedulerFactory rpcSchedulerFactory, final InetSocketAddress bindAddress,
+                                                 final String name) throws IOException {
+        final Configuration conf = server.getConfiguration();
+        boolean reservoirEnabled = conf.getBoolean(ByteBuffAllocator.ALLOCATOR_POOL_ENABLED_KEY, true);
+        try {
+            return RpcServerFactory.createRpcServer(server, name, getServices(), bindAddress, // use final
+                    // bindAddress
+                    // for this
+                    // server.
+                    conf, rpcSchedulerFactory.create(conf, (PriorityFunction) this, (Abortable) server), reservoirEnabled);
+        } catch (BindException be) {
+            throw new IOException(be.getMessage() + ". To switch ports use the '"
+                    + HConstants.REGIONSERVER_PORT + "' configuration property.",
+                    be.getCause() != null ? be.getCause() : be);
+        }
+    }
+
+    protected Class<?> getRpcSchedulerFactoryClass() {
+        final Configuration conf = regionServer.getConfiguration();
+        return conf.getClass(REGION_SERVER_RPC_SCHEDULER_FACTORY_CLASS,
+                SimpleRpcSchedulerFactory.class);
+    }
+    public PriorityFunction getPriority() {
+        return priority;
+    }
+    protected PriorityFunction createPriority() {
+        return new PriorityFunction() {
+            @Override
+            public int getPriority(RequestHeader header, Message param, User user) {
+                return 0;
+            }
+
+            @Override
+            public long getDeadline(RequestHeader header, Message param) {
+                return 0;
+            }
+        };
+    }
+
 }
