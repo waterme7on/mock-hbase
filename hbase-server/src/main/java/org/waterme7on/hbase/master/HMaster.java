@@ -6,6 +6,7 @@ import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.log.HBaseMarkers;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Addressing;
 import org.apache.hadoop.hbase.util.Threads;
@@ -20,6 +21,8 @@ import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.ServerConnector;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
+import org.waterme7on.hbase.monitoring.MonitoredTask;
+import org.waterme7on.hbase.monitoring.TaskMonitor;
 
 public class HMaster extends HRegionServer implements MasterServices {
     private static final Logger LOG = LoggerFactory.getLogger(HMaster.class);
@@ -88,7 +91,46 @@ public class HMaster extends HRegionServer implements MasterServices {
         }
     }
     public void startActiveMasterManager(int infoPort) throws KeeperException {
+        // omit details such as backup nodes
 
+        this.activeMasterManager.setInfoPort(infoPort);
+        int timeout = conf.getInt(HConstants.ZK_SESSION_TIMEOUT, HConstants.DEFAULT_ZK_SESSION_TIMEOUT);
+        // If we're a backup master, stall until a primary to write this address
+        if (conf.getBoolean(HConstants.MASTER_TYPE_BACKUP, HConstants.DEFAULT_MASTER_TYPE_BACKUP)) {
+            LOG.debug("HMaster started in backup mode. Stalling until master znode is written.");
+            // This will only be a minute or so while the cluster starts up,
+            // so don't worry about setting watches on the parent znode
+            while (!activeMasterManager.hasActiveMaster()) {
+                LOG.debug("Waiting for master address and cluster state znode to be written.");
+                Threads.sleep(timeout);
+            }
+        }
+
+        MonitoredTask status = TaskMonitor.get().createStatus("Master startup"); // log
+        status.setDescription("Master startup");
+
+        try {
+            if (activeMasterManager.blockUntilBecomingActiveMaster(timeout, status)) {
+                finishActiveMasterInitialization(status);
+            }
+        } catch (Throwable t) {
+            status.setStatus("Failed to become active: " + t.getMessage());
+            LOG.error(HBaseMarkers.FATAL, "Failed to become active master", t);
+            // HBASE-5680: Likely hadoop23 vs hadoop 20.x/1.x incompatibility
+            if (
+                    t instanceof NoClassDefFoundError
+                            && t.getMessage().contains("org/apache/hadoop/hdfs/protocol/HdfsConstants$SafeModeAction")
+            ) {
+                // improved error message for this special case
+                abort("HBase is having a problem with its Hadoop jars.  You may need to recompile "
+                        + "HBase against Hadoop version " + org.apache.hadoop.util.VersionInfo.getVersion()
+                        + " or change your hadoop jars to start properly", t);
+            } else {
+                abort("Unhandled exception. Starting shutdown.", t);
+            }
+        } finally {
+            status.cleanup();
+        }
     }
     private int putUpJettyServer() throws IOException {
         final int infoPort =
@@ -123,9 +165,12 @@ public class HMaster extends HRegionServer implements MasterServices {
         return connector.getLocalPort();
     }
 
+    private void finishActiveMasterInitialization(MonitoredTask status)
+            throws IOException, InterruptedException, KeeperException {
+    }
 
     protected ActiveMasterManager createActiveMasterManager(ZKWatcher zk, ServerName sn,
-                                                            org.waterme7on.hbase.Server server) throws InterruptedIOException {
+                                                        org.waterme7on.hbase.Server server) throws InterruptedIOException {
         return new ActiveMasterManager(zk, sn, server);
     }
 
