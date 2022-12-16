@@ -6,8 +6,5 @@ import org.slf4j.LoggerFactory;
 public class HRegionServer extends Thread {
     private static final Logger LOG = LoggerFactory.getLogger(HRegionServer.class);
 
-    public HRegionServer() {
-    }
-
-    ;
+    public HRegionServer() {};
 }
