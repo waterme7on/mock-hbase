@@ -70,4 +70,5 @@ public class MasterFileSystem {
     public FileSystem getWALFileSystem() {
         return this.walFs;
     }
+
 }

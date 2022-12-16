@@ -239,4 +239,9 @@ public class HMaster extends HRegionServer implements MasterServices {
     public MasterFileSystem getMasterFileSystem() {
         return this.fileSystemManager;
     }
+
+    @Override
+    public MasterWalManager getMasterWalManager() {
+        return this.walManager;
+    }
 }
