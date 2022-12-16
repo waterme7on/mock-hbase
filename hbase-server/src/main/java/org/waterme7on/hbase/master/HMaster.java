@@ -204,6 +204,12 @@ public class HMaster extends HRegionServer implements MasterServices {
         this.fileSystemManager = new MasterFileSystem(conf);
         this.walManager = new MasterWalManager(this);
 
+
+        status.setStatus("Initialize ServerManager and schedule SCP for crash servers");
+        // The below two managers must be created before loading procedures, as they will be used during
+        // loading.
+        // initialize master local region
+
     }
 
     protected ActiveMasterManager createActiveMasterManager(ZKWatcher zk, ServerName sn,
