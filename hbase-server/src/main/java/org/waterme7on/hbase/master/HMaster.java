@@ -14,6 +14,8 @@ import org.apache.hadoop.hbase.util.Threads;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.regionserver.HRegion;
+import org.waterme7on.hbase.regionserver.HRegionFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
 import java.io.IOException;
 import java.io.InterruptedIOException;
@@ -44,6 +46,10 @@ public class HMaster extends HRegionServer implements MasterServices {
     protected ServerName serverName;
     // flag set after we become the active master (used for testing)
     private volatile boolean activeMaster = false;
+    private HRegion masterRegion;
+    private RegionServerList rsListStorage;
+    // server manager to deal with region server info
+    private volatile ServerManager serverManager;
 
     public HMaster(final Configuration conf) throws IOException {
         super(conf);
@@ -200,16 +206,22 @@ public class HMaster extends HRegionServer implements MasterServices {
         status.setStatus("Initializing Master file system");
         // always initialize the MemStoreLAB as we use a region to store data in master now, see
         // localStore.
-        initializeMemStoreChunkCreator();
-        this.fileSystemManager = new MasterFileSystem(conf);
-        this.walManager = new MasterWalManager(this);
+        initializeMemStoreChunkCreator(); // TODO
+        this.fileSystemManager = new MasterFileSystem(conf); // do file read/write
+        this.walManager = new MasterWalManager(this); // wal read/write into filesystem
 
-
-        status.setStatus("Initialize ServerManager and schedule SCP for crash servers");
         // The below two managers must be created before loading procedures, as they will be used during
         // loading.
         // initialize master local region
+        masterRegion = HRegionFactory.create(this);
+        rsListStorage = new MasterRegionServerList(masterRegion, this);
+        this.serverManager = createServerManager(this, rsListStorage);
+        this.activeMaster = true;
+    }
 
+    private ServerManager createServerManager(MasterServices master, RegionServerList storage) {
+        // TODO
+        return new ServerManager();
     }
 
     protected ActiveMasterManager createActiveMasterManager(ZKWatcher zk, ServerName sn,
