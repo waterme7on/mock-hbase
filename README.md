@@ -21,6 +21,12 @@
 
 ...
 
+## Build
+
+- Resolve dependencies: `mvn dependency:resolve`
+- Build codes to executable JAR file: `mvn package`
+- Run tests: `mvn test`
+
 ## Contribution
 
 1. Code

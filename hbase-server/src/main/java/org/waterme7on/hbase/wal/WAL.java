@@ -1,7 +1,5 @@
 package org.waterme7on.hbase.wal;
 
-import com.sun.org.apache.xpath.internal.operations.String;
-
 import java.io.Closeable;
 
 public interface WAL extends Closeable  {

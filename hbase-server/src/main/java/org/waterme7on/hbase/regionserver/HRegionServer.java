@@ -7,10 +7,13 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
+import org.waterme7on.hbase.fs.HFileSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class HRegionServer extends Thread implements RegionServerServices {
     private static final Logger LOG = LoggerFactory.getLogger(HRegionServer.class);
@@ -21,6 +24,25 @@ public class HRegionServer extends Thread implements RegionServerServices {
     private Path dataRootDir;
     /** region server process name */
     public static final String REGIONSERVER = "regionserver";
+    /**
+     * Map of regions currently being served by this region server. Key is the encoded region name.
+     * All access should be synchronized.
+     */
+    private final Map<String, HRegion> onlineRegions = new ConcurrentHashMap<>();
+
+    /*
+    * MemStore components
+    * */
+    private MemStoreFlusher cacheFlusher;
+
+    private HeapMemoryManager hMemManager;
+
+    /*
+    * HDFS components
+    * */
+    private HFileSystem dataFs;
+    private HFileSystem walFs;
+
     /**
      * True if this RegionServer is coming up in a cluster where there is no Master; means it needs to
      * just come up and make do without a Master to talk to: e.g. in test or HRegionServer is doing
@@ -88,4 +110,10 @@ public class HRegionServer extends Thread implements RegionServerServices {
     public boolean isStopped() {
         return false;
     }
+
+
+    protected void initializeMemStoreChunkCreator() {
+        // TODO: MemStoreLAB, simply leave empty now
+    }
+
 }

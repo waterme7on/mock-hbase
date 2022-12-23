@@ -11,6 +11,7 @@ import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Addressing;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Threads;
+import org.apache.hadoop.hbase.util.VersionInfo;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,8 @@ import org.waterme7on.hbase.regionserver.HRegionServer;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.lang.management.MemoryType;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
@@ -229,11 +232,6 @@ public class HMaster extends HRegionServer implements MasterServices {
         return new ActiveMasterManager(zk, sn, server);
     }
 
-    protected void initializeMemStoreChunkCreator() {
-        // TODO: MemStoreLAB, simply leave empty now
-    }
-
-
     @Override
     public void abort(String reason, Throwable cause) {
     }
@@ -261,5 +259,37 @@ public class HMaster extends HRegionServer implements MasterServices {
     @Override
     public MasterWalManager getMasterWalManager() {
         return this.walManager;
+    }
+
+
+    /**
+     * Utility for constructing an instance of the passed HMaster class.
+     * @return HMaster instance.
+     */
+    public static HMaster constructMaster(Class<? extends HMaster> masterClass,
+                                          final Configuration conf) {
+        try {
+            Constructor<? extends HMaster> c = masterClass.getConstructor(Configuration.class);
+            return c.newInstance(conf);
+        } catch (Exception e) {
+            Throwable err = e;
+            if (
+                    e instanceof InvocationTargetException
+                            && ((InvocationTargetException) e).getTargetException() != null
+            ) {
+                err = ((InvocationTargetException) e).getTargetException();
+            }
+            throw new RuntimeException("Failed construction of Master: " + masterClass.toString() + ". ",
+                    err);
+        }
+    }
+
+    /**
+     * @see org.waterme7on.hbase.master.HMasterCommandLine
+     */
+    public static void main(String[] args) {
+        LOG.info("STARTING service " + HMaster.class.getSimpleName());
+//        new HMasterCommandLine(HMaster.class).doMain(args);
+        System.out.println(11111);
     }
 }
