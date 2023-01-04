@@ -17,12 +17,15 @@ import static org.apache.hadoop.hbase.util.Threads.isNonDaemonThreadRunning;
 
 public abstract class ServerCommandLine extends Configured implements Tool {
     private static final Logger LOG = LoggerFactory.getLogger(ServerCommandLine.class);
+
     /**
      * Implementing subclasses should return a usage string to print out.
      */
     protected abstract String getUsage();
+
     /**
      * Print usage information for this command line.
+     * 
      * @param message if not null, print this message before the usage info.
      */
     protected void usage(String message) {
@@ -33,6 +36,7 @@ public abstract class ServerCommandLine extends Configured implements Tool {
 
         System.err.println(getUsage());
     }
+
     /**
      * Log information about the currently running JVM.
      */
@@ -69,14 +73,18 @@ public abstract class ServerCommandLine extends Configured implements Tool {
         // and JVM info
         logJVMInfo();
     }
+
     /**
-     * Parse and run the given command line. This will exit the JVM with the exit code returned from
-     * <code>run()</code>. If return code is 0, wait for atmost 30 seconds for all non-daemon threads
+     * Parse and run the given command line. This will exit the JVM with the exit
+     * code returned from
+     * <code>run()</code>. If return code is 0, wait for atmost 30 seconds for all
+     * non-daemon threads
      * to quit, otherwise exit the jvm
      */
     public void doMain(String args[]) {
         try {
-            int ret = ToolRunner.run(HBaseConfiguration.create(), this, args);
+            Configuration conf = HBaseConfiguration.create();
+            int ret = ToolRunner.run(conf, this, args);
             if (ret != 0) {
                 System.exit(ret);
             }

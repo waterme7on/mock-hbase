@@ -25,39 +25,43 @@ public class HBaseCluster {
     public HBaseCluster(final Configuration conf) throws IOException {
         this(conf, DEFAULT_NO);
     }
+
     /**
      * Constructor.
-     * @param conf            Configuration to use. Post construction has the master's address.
+     * 
+     * @param conf            Configuration to use. Post construction has the
+     *                        master's address.
      * @param noRegionServers Count of regionservers to start.
      */
     public HBaseCluster(final Configuration conf, final int noRegionServers) throws IOException {
         this(conf, 1, 0, noRegionServers, getMasterImplementation(conf),
                 getRegionServerImplementation(conf));
     }
+
     public HBaseCluster(final Configuration conf, final int noMasters,
-                             final int noAlwaysStandByMasters, final int noRegionServers,
-                             final Class<? extends HMaster> masterClass,
-                             final Class<? extends HRegionServer> regionServerClass) throws IOException {
+            final int noAlwaysStandByMasters, final int noRegionServers,
+            final Class<? extends HMaster> masterClass,
+            final Class<? extends HRegionServer> regionServerClass) throws IOException {
         this.conf = conf;
-       // Start the HMasters.
+        // Start the HMasters.
         this.masterClass = (Class<? extends HMaster>) conf.getClass(HConstants.MASTER_IMPL, masterClass);
         for (int j = 0; j < noMasters; j++) {
             addMaster(new Configuration(conf), j);
         }
         // Start the HRegionServers.
-        this.regionServerClass = (Class<? extends HRegionServer>) conf.getClass(HConstants.REGION_SERVER_IMPL, regionServerClass);
+        this.regionServerClass = (Class<? extends HRegionServer>) conf.getClass(HConstants.REGION_SERVER_IMPL,
+                regionServerClass);
         for (int j = 0; j < noRegionServers; j++) {
             addRegionServer(new Configuration(conf), j);
         }
 
     }
-    private static Class<? extends HMaster>
-    getMasterImplementation(final Configuration conf) {
+
+    private static Class<? extends HMaster> getMasterImplementation(final Configuration conf) {
         return (Class<? extends HMaster>) conf.getClass(HConstants.MASTER_IMPL, HMaster.class);
     }
 
-    private static Class<? extends HRegionServer>
-    getRegionServerImplementation(final Configuration conf) {
+    private static Class<? extends HRegionServer> getRegionServerImplementation(final Configuration conf) {
         return (Class<? extends HRegionServer>) conf.getClass(HConstants.REGION_SERVER_IMPL, HRegionServer.class);
     }
 
@@ -65,10 +69,12 @@ public class HBaseCluster {
             throws IOException {
         return null;
     }
+
     public Thread addRegionServer(Configuration config, final int index)
             throws IOException {
         return null;
     }
+
     public static void main(String[] args) throws IOException {
         System.out.println("Hello World!");
     }

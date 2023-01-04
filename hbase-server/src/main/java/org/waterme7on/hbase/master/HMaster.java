@@ -63,8 +63,9 @@ public class HMaster extends HRegionServer implements MasterServices {
             this.conf.setBoolean(HConstants.USE_META_REPLICAS, false);
             this.activeMasterManager = createActiveMasterManager(zooKeeper, serverName, this);
             span.setStatus(StatusCode.OK);
-        }catch (Throwable t) {
-            // Make sure we log the exception. HMaster is often started via reflection and the
+        } catch (Throwable t) {
+            // Make sure we log the exception. HMaster is often started via reflection and
+            // the
             // cause of failed startup is lost.
             TraceUtil.setError(span, t);
             LOG.error("Failed construction of Master", t);
@@ -91,7 +92,8 @@ public class HMaster extends HRegionServer implements MasterServices {
                     }
                 }
             }, "HMaster.becomeActiveMaster")), getName() + ":becomeActiveMaster");
-            // Fall in here even if we have been aborted. Need to run the shutdown services and
+            // Fall in here even if we have been aborted. Need to run the shutdown services
+            // and
             // the super run call will do this for us.
             super.run();
         } finally {
@@ -104,6 +106,7 @@ public class HMaster extends HRegionServer implements MasterServices {
             }
         }
     }
+
     public void startActiveMasterManager(int infoPort) throws KeeperException {
         // omit details such as backup nodes
 
@@ -131,10 +134,8 @@ public class HMaster extends HRegionServer implements MasterServices {
             status.setStatus("Failed to become active: " + t.getMessage());
             LOG.error(HBaseMarkers.FATAL, "Failed to become active master", t);
             // HBASE-5680: Likely hadoop23 vs hadoop 20.x/1.x incompatibility
-            if (
-                    t instanceof NoClassDefFoundError
-                            && t.getMessage().contains("org/apache/hadoop/hdfs/protocol/HdfsConstants$SafeModeAction")
-            ) {
+            if (t instanceof NoClassDefFoundError
+                    && t.getMessage().contains("org/apache/hadoop/hdfs/protocol/HdfsConstants$SafeModeAction")) {
                 // improved error message for this special case
                 abort("HBase is having a problem with its Hadoop jars.  You may need to recompile "
                         + "HBase against Hadoop version " + org.apache.hadoop.util.VersionInfo.getVersion()
@@ -146,9 +147,9 @@ public class HMaster extends HRegionServer implements MasterServices {
             status.cleanup();
         }
     }
+
     private int putUpJettyServer() throws IOException {
-        final int infoPort =
-                conf.getInt("hbase.master.info.port.orig", HConstants.DEFAULT_MASTER_INFOPORT);
+        final int infoPort = conf.getInt("hbase.master.info.port.orig", HConstants.DEFAULT_MASTER_INFOPORT);
         if (infoPort < 0) {
             return -1;
         }
@@ -169,7 +170,8 @@ public class HMaster extends HRegionServer implements MasterServices {
         connector.setPort(infoPort);
         masterJettyServer.addConnector(connector);
         masterJettyServer.setStopAtShutdown(true);
-        masterJettyServer.setHandler(org.apache.hadoop.hbase.http.HttpServer.buildGzipHandler(masterJettyServer.getHandler()));
+        masterJettyServer
+                .setHandler(org.apache.hadoop.hbase.http.HttpServer.buildGzipHandler(masterJettyServer.getHandler()));
 
         try {
             masterJettyServer.start();
@@ -179,16 +181,17 @@ public class HMaster extends HRegionServer implements MasterServices {
         return connector.getLocalPort();
     }
 
-
     /**
      * Finish initialization of HMaster after becoming the primary master.
      *
-     * The startup order is a bit complicated but very important, do not change it unless you know
+     * The startup order is a bit complicated but very important, do not change it
+     * unless you know
      * what you are doing.
      *
      * Publish cluster id
      *
-     * Here comes the most complicated part - initialize server manager, assignment manager and
+     * Here comes the most complicated part - initialize server manager, assignment
+     * manager and
      * region server tracker
      * - Create master local region
      * - Create server manager
@@ -198,8 +201,10 @@ public class HMaster extends HRegionServer implements MasterServices {
      * - Start all other things such as chore services, etc
      *
      *
-     * Notice that now we will not schedule a special procedure to make meta online(unless the first
-     * time where meta has not been created yet), we will rely on SCP to bring meta online.
+     * Notice that now we will not schedule a special procedure to make meta
+     * online(unless the first
+     * time where meta has not been created yet), we will rely on SCP to bring meta
+     * online.
      */
     private void finishActiveMasterInitialization(MonitoredTask status)
             throws IOException, InterruptedException, KeeperException {
@@ -207,13 +212,15 @@ public class HMaster extends HRegionServer implements MasterServices {
          * We are active master now... go initialize components we need to run.
          */
         status.setStatus("Initializing Master file system");
-        // always initialize the MemStoreLAB as we use a region to store data in master now, see
+        // always initialize the MemStoreLAB as we use a region to store data in master
+        // now, see
         // localStore.
         initializeMemStoreChunkCreator(); // TODO
         this.fileSystemManager = new MasterFileSystem(conf); // do file read/write
         this.walManager = new MasterWalManager(this); // wal read/write into filesystem
 
-        // The below two managers must be created before loading procedures, as they will be used during
+        // The below two managers must be created before loading procedures, as they
+        // will be used during
         // loading.
         // initialize master local region
         masterRegion = HRegionFactory.create(this);
@@ -228,7 +235,7 @@ public class HMaster extends HRegionServer implements MasterServices {
     }
 
     protected ActiveMasterManager createActiveMasterManager(ZKWatcher zk, ServerName sn,
-                                                        org.waterme7on.hbase.Server server) throws InterruptedIOException {
+            org.waterme7on.hbase.Server server) throws InterruptedIOException {
         return new ActiveMasterManager(zk, sn, server);
     }
 
@@ -261,22 +268,20 @@ public class HMaster extends HRegionServer implements MasterServices {
         return this.walManager;
     }
 
-
     /**
      * Utility for constructing an instance of the passed HMaster class.
+     * 
      * @return HMaster instance.
      */
     public static HMaster constructMaster(Class<? extends HMaster> masterClass,
-                                          final Configuration conf) {
+            final Configuration conf) {
         try {
             Constructor<? extends HMaster> c = masterClass.getConstructor(Configuration.class);
             return c.newInstance(conf);
         } catch (Exception e) {
             Throwable err = e;
-            if (
-                    e instanceof InvocationTargetException
-                            && ((InvocationTargetException) e).getTargetException() != null
-            ) {
+            if (e instanceof InvocationTargetException
+                    && ((InvocationTargetException) e).getTargetException() != null) {
                 err = ((InvocationTargetException) e).getTargetException();
             }
             throw new RuntimeException("Failed construction of Master: " + masterClass.toString() + ". ",
@@ -289,7 +294,6 @@ public class HMaster extends HRegionServer implements MasterServices {
      */
     public static void main(String[] args) {
         LOG.info("STARTING service " + HMaster.class.getSimpleName());
-//        new HMasterCommandLine(HMaster.class).doMain(args);
-        System.out.println(11111);
+        new HMasterCommandLine(HMaster.class).doMain(args);
     }
 }

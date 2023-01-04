@@ -4,6 +4,10 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.CommandLine;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.GnuParser;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.Options;
+import org.apache.hadoop.hbase.trace.TraceUtil;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Scope;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.ParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,19 +18,45 @@ import java.util.List;
 public class HMasterCommandLine extends ServerCommandLine {
     private static final Logger LOG = LoggerFactory.getLogger(HMasterCommandLine.class);
     private static final String USAGE = "//TODO";
-    private int startMaster(){
+
+    private int startMaster() {
         Configuration conf = getConf();
-        System.out.println(conf);
+        final Span span = TraceUtil.createSpan("HMasterCommandLine.startMaster");
+        try (Scope ignored = span.makeCurrent()) {
+            logProcessInfo(conf);
+            HMaster master = HMaster.constructMaster(masterClass, conf);
+            if (master.isStopped()) {
+                LOG.info("Won't bring the Master up as a shutdown is requested");
+                return 1;
+            }
+            master.start();
+            master.join();
+            if (master.isAborted()) {
+                throw new RuntimeException("HMaster Aborted");
+            }
+            span.setStatus(StatusCode.OK);
+        } catch (Throwable t) {
+            TraceUtil.setError(span, t);
+            LOG.error("Master exiting", t);
+            return 1;
+        } finally {
+            span.end();
+        }
+
         return 0;
     }
-    private int stopMaster(){
+
+    private int stopMaster() {
+        // TODO
         return 0;
     }
+
     private final Class<? extends HMaster> masterClass;
 
     public HMasterCommandLine(Class<? extends HMaster> masterClass) {
         this.masterClass = masterClass;
     }
+
     @Override
     public int run(String[] args) throws Exception {
         boolean shutDownCluster = false;
@@ -44,7 +74,8 @@ public class HMasterCommandLine extends ServerCommandLine {
             usage(null);
             return 1;
         }
-        // How many regionservers to startup in this process (we run regionservers in same process as
+        // How many regionservers to startup in this process (we run regionservers in
+        // same process as
         // master when we are in local/standalone mode. Useful testing)
         if (cmd.hasOption("localRegionServers")) {
             String val = cmd.getOptionValue("localRegionServers");
@@ -82,8 +113,8 @@ public class HMasterCommandLine extends ServerCommandLine {
                     + "and to stop HBase Cluster run \"stop-hbase.sh\" or \"hbase master "
                     + "stop --shutDownCluster\"");
             return 1;
-//        } else if ("clear".equals(command)) {
-//            return (ZNodeClearer.clear(getConf()) ? 0 : 1);
+            // } else if ("clear".equals(command)) {
+            // return (ZNodeClearer.clear(getConf()) ? 0 : 1);
         } else {
             usage("Invalid command: " + command);
             return 1;
@@ -93,6 +124,6 @@ public class HMasterCommandLine extends ServerCommandLine {
 
     @Override
     protected String getUsage() {
-        return null;
+        return USAGE;
     }
 }
