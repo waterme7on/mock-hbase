@@ -25,8 +25,7 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-@SuppressWarnings("deprecation")
-public class RSRpcServices {
+public class RSRpcServices implements HBaseRPCErrorHandler {
     public static final String REGIONSERVER_ADMIN_SERVICE_CONFIG = "hbase.regionserver.admin.executorService";
     public static final String REGIONSERVER_CLIENT_SERVICE_CONFIG = "hbase.regionserver.client.executorService";
     public static final String REGIONSERVER_CLIENT_META_SERVICE_CONFIG = "hbase.regionserver.client.meta.executorService";
@@ -76,6 +75,7 @@ public class RSRpcServices {
         // w/o the domain.
         final String name = rs.getProcessName() + "/"
                 + Address.fromParts(initialIsa.getHostName(), initialIsa.getPort()).toStringWithoutDomain();
+        LOG.debug("Starting RPC server on " + initialIsa + " with bindAddress=" + bindAddress + " and name=" + name);
         rpcServer = createRpcServer((Server) rs, rpcSchedulerFactory, bindAddress, name);
         rpcServer.setRsRpcServices(this);
         // // TODO
@@ -129,12 +129,14 @@ public class RSRpcServices {
         final Configuration conf = server.getConfiguration();
         boolean reservoirEnabled = conf.getBoolean(ByteBuffAllocator.ALLOCATOR_POOL_ENABLED_KEY, true);
         try {
-            return RpcServerFactory.createRpcServer(server, name, getServices(), bindAddress, // use final
+            RpcServerInterface ret = RpcServerFactory.createRpcServer(server, name, getServices(), bindAddress, // use
+                                                                                                                // final
                     // bindAddress
                     // for this
                     // server.
                     conf, rpcSchedulerFactory.create(conf, (Abortable) server),
                     reservoirEnabled);
+            return ret;
         } catch (BindException be) {
             throw new IOException(be.getMessage() + ". To switch ports use the '"
                     + HConstants.REGIONSERVER_PORT + "' configuration property.",
@@ -146,5 +148,34 @@ public class RSRpcServices {
         final Configuration conf = regionServer.getConfiguration();
         return conf.getClass(REGION_SERVER_RPC_SCHEDULER_FACTORY_CLASS,
                 SimpleRpcSchedulerFactory.class);
+    }
+
+    /*
+     * Check if an OOME and, if so, abort immediately to avoid creating more
+     * objects.
+     * 
+     * @return True if we OOME'd and are aborting.
+     */
+    @Override
+    public boolean checkOOME(final Throwable e) {
+        return exitIfOOME(e);
+    }
+
+    public static boolean exitIfOOME(final Throwable e) {
+        boolean stop = false;
+        try {
+            if (e instanceof OutOfMemoryError
+                    || (e.getCause() != null && e.getCause() instanceof OutOfMemoryError)
+                    || (e.getMessage() != null && e.getMessage().contains("java.lang.OutOfMemoryError"))) {
+                stop = true;
+                LOG.error("FATAL Run out of memory; " + RSRpcServices.class.getSimpleName()
+                        + " will abort itself immediately", e);
+            }
+        } finally {
+            if (stop) {
+                Runtime.getRuntime().halt(1);
+            }
+        }
+        return stop;
     }
 }

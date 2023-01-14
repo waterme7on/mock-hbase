@@ -8,6 +8,7 @@ import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 import org.waterme7on.hbase.fs.HFileSystem;
+import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,40 +26,46 @@ public class HRegionServer extends Thread implements RegionServerServices {
     /** region server process name */
     public static final String REGIONSERVER = "regionserver";
     /**
-     * Map of regions currently being served by this region server. Key is the encoded region name.
+     * Map of regions currently being served by this region server. Key is the
+     * encoded region name.
      * All access should be synchronized.
      */
     private final Map<String, HRegion> onlineRegions = new ConcurrentHashMap<>();
 
     /*
-    * MemStore components
-    * */
+     * MemStore components
+     */
     private MemStoreFlusher cacheFlusher;
 
     private HeapMemoryManager hMemManager;
 
     /*
-    * HDFS components
-    * */
+     * HDFS components
+     */
     private HFileSystem dataFs;
     private HFileSystem walFs;
 
     /**
-     * True if this RegionServer is coming up in a cluster where there is no Master; means it needs to
-     * just come up and make do without a Master to talk to: e.g. in test or HRegionServer is doing
-     * other than its usual duties: e.g. as an hollowed-out host whose only purpose is as a
+     * True if this RegionServer is coming up in a cluster where there is no Master;
+     * means it needs to
+     * just come up and make do without a Master to talk to: e.g. in test or
+     * HRegionServer is doing
+     * other than its usual duties: e.g. as an hollowed-out host whose only purpose
+     * is as a
      * Replication-stream sink; see HBASE-18846 for more. TODO: can this replace
      * {@link #TEST_SKIP_REPORTING_TRANSITION} ?
      */
     private final boolean masterless;
+    private final NettyEventLoopGroupConfig eventLoopGroupConfig;
     private static final String MASTERLESS_CONFIG_NAME = "hbase.masterless";
 
     public HRegionServer(final Configuration conf) throws IOException {
         super("RegionServer"); // thread name
         final Span span = TraceUtil.createSpan("HRegionServer.cxtor");
-        try (Scope ignored = span.makeCurrent()){
+        try (Scope ignored = span.makeCurrent()) {
             this.conf = conf;
             this.masterless = conf.getBoolean(MASTERLESS_CONFIG_NAME, false);
+            this.eventLoopGroupConfig = setupNetty(this.conf);
             // initialize hdfs
             this.dataRootDir = CommonFSUtils.getRootDir(this.conf);
             // Some unit tests don't need a cluster, so no zookeeper at all
@@ -66,29 +73,38 @@ public class HRegionServer extends Thread implements RegionServerServices {
             this.rpcServices = createRpcServices();
             this.zooKeeper = new ZKWatcher(conf, getProcessName() + ":" + rpcServices.isa.getPort(), this,
                     canCreateBaseZNode());
-
         } catch (Throwable t) {
-            // Make sure we log the exception. HRegionServer is often started via reflection and the
+            // Make sure we log the exception. HRegionServer is often started via reflection
+            // and the
             // cause of failed startup is lost.
             TraceUtil.setError(span, t);
-            LOG.error("Failed construction RegionServer", t);
+            LOG.error("Failed construction RegionServer", t.getMessage());
             throw t;
         } finally {
             span.end();
         }
     }
+
+    public NettyEventLoopGroupConfig getEventLoopGroupConfig() {
+        return this.eventLoopGroupConfig;
+    }
+
     public Configuration getConfiguration() {
         return conf;
     }
+
     protected Path getDataRootDir() {
         return dataRootDir;
     }
+
     protected String getProcessName() {
         return REGIONSERVER;
     }
+
     protected boolean canCreateBaseZNode() {
         return this.masterless;
     }
+
     protected RSRpcServices createRpcServices() throws IOException {
         return new RSRpcServices(this);
     }
@@ -111,9 +127,19 @@ public class HRegionServer extends Thread implements RegionServerServices {
         return false;
     }
 
-
     protected void initializeMemStoreChunkCreator() {
         // TODO: MemStoreLAB, simply leave empty now
+    }
+
+    private static NettyEventLoopGroupConfig setupNetty(Configuration conf) {
+        // Initialize netty event loop group at start as we may use it for rpc server,
+        // rpc client & WAL.
+        NettyEventLoopGroupConfig nelgc = new NettyEventLoopGroupConfig(conf, "RS-EventLoopGroup");
+        // NettyRpcClientConfigHelper.setEventLoopConfig(conf, nelgc.group(),
+        // nelgc.clientChannelClass());
+        // NettyAsyncFSWALConfigHelper.setEventLoopConfig(conf, nelgc.group(),
+        // nelgc.clientChannelClass());
+        return nelgc;
     }
 
 }

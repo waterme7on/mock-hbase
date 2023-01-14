@@ -11,33 +11,31 @@ import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.ipc.RpcServer.BlockingServiceAndInterface;
 
 public class RpcServerFactory {
-    public static final Logger LOG = LoggerFactory.getLogger(RpcServerFactory.class);
+        public static final Logger LOG = LoggerFactory.getLogger(RpcServerFactory.class);
 
-    public static final String CUSTOM_RPC_SERVER_IMPL_CONF_KEY = "hbase.rpc.server.impl";
+        public static final String CUSTOM_RPC_SERVER_IMPL_CONF_KEY = "hbase.rpc.server.impl";
 
-    /**
-     * Private Constructor
-     */
-    private RpcServerFactory() {
-    }
+        /**
+         * Private Constructor
+         */
+        private RpcServerFactory() {
+        }
 
-    public static RpcServer createRpcServer(final Server server, final String name,
-                                            final List<BlockingServiceAndInterface> services,
-                                            final InetSocketAddress bindAddress,
-                                            Configuration conf, RpcScheduler scheduler) throws IOException {
-        return createRpcServer(server, name, services, bindAddress, conf, scheduler, true);
-    }
+        public static RpcServer createRpcServer(final Server server, final String name,
+                        final List<BlockingServiceAndInterface> services,
+                        final InetSocketAddress bindAddress,
+                        Configuration conf, RpcScheduler scheduler) throws IOException {
+                return createRpcServer(server, name, services, bindAddress, conf, scheduler, true);
+        }
 
-    public static RpcServer createRpcServer(final Server server, final String name,
-                                            final List<BlockingServiceAndInterface> services,
-                                            final InetSocketAddress bindAddress,
-                                            Configuration conf, RpcScheduler scheduler, boolean reservoirEnabled) throws IOException {
-        String rpcServerClass =
-                conf.get(CUSTOM_RPC_SERVER_IMPL_CONF_KEY, NettyRpcServer.class.getName());
-//        LOG.info("Creating " + rpcServerClass + " hosting " + servicesList);
-        return ReflectionUtils.instantiateWithCustomCtor(rpcServerClass,
-                new Class[] { Server.class, String.class, InetSocketAddress.class,
-                        Configuration.class, RpcScheduler.class, boolean.class },
-                new Object[] { server, name, bindAddress, conf, scheduler, reservoirEnabled });
-    }
+        public static RpcServer createRpcServer(final Server server, final String name,
+                        final List<BlockingServiceAndInterface> services,
+                        final InetSocketAddress bindAddress,
+                        Configuration conf, RpcScheduler scheduler, boolean reservoirEnabled) throws IOException {
+                String rpcServerClass = conf.get(CUSTOM_RPC_SERVER_IMPL_CONF_KEY, NettyRpcServer.class.getName());
+                return ReflectionUtils.instantiateWithCustomCtor(rpcServerClass,
+                                new Class[] { Server.class, String.class, InetSocketAddress.class,
+                                                Configuration.class, RpcScheduler.class, boolean.class },
+                                new Object[] { server, name, bindAddress, conf, scheduler, reservoirEnabled });
+        }
 }

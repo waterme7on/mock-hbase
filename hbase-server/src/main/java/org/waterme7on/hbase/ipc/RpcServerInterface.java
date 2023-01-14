@@ -10,7 +10,16 @@ public interface RpcServerInterface {
     boolean isStarted();
 
     void stop();
+
     void setRsRpcServices(RSRpcServices rsRpcServices);
+
     InetSocketAddress getListenerAddress();
+
     void setErrorHandler(HBaseRPCErrorHandler handler);
+
+    void join() throws InterruptedException;
+
+    String toString();
+
+    void setSocketSendBufSize(int size);
 }
