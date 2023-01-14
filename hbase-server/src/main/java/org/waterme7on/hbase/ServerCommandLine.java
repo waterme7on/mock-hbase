@@ -2,6 +2,7 @@ package org.waterme7on.hbase;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
@@ -84,6 +85,11 @@ public abstract class ServerCommandLine extends Configured implements Tool {
     public void doMain(String args[]) {
         try {
             Configuration conf = HBaseConfiguration.create();
+            Path rootDir = new Path(System.getProperty("user.dir"));
+            LOG.debug("doMain:" + rootDir.toString());
+            // conf.set("hbase.zookeeper.quorum", "172.17.0.2");
+            conf.addResource(new Path(rootDir, "conf/hbase-site.xml"));
+            logHBaseConfigs(conf);
             int ret = ToolRunner.run(conf, this, args);
             if (ret != 0) {
                 System.exit(ret);

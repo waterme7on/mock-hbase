@@ -23,6 +23,7 @@
 # Modelled after $HADOOP_HOME/bin/hadoop-env.sh.
 
 # resolve links - "${BASH_SOURCE-$0}" may be a softlink
+export HBASE_MANAGES_ZK=false
 
 this="${BASH_SOURCE-$0}"
 while [ -h "$this" ]; do

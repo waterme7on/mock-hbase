@@ -21,6 +21,9 @@ public class HMasterCommandLine extends ServerCommandLine {
 
     private int startMaster() {
         Configuration conf = getConf();
+        conf.addResource(null, "hbase-site.xml");
+        conf.addResource("hbase-site.xml");
+
         final Span span = TraceUtil.createSpan("HMasterCommandLine.startMaster");
         try (Scope ignored = span.makeCurrent()) {
             logProcessInfo(conf);
