@@ -29,7 +29,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Threads;
-import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,10 +36,10 @@ import org.apache.hbase.thirdparty.com.google.common.collect.Lists;
 import org.apache.hbase.thirdparty.org.apache.commons.collections4.queue.CircularFifoQueue;
 
 /**
- * Singleton which keeps track of tasks going on in this VM. A Task here is anything which takes
+ * Singleton which keeps track of tasks going on in this VM. A Task here is
+ * anything which takes
  * more than a few seconds and the user might want to inquire about the status
  */
-@InterfaceAudience.Private
 public class TaskMonitor {
   private static final Logger LOG = LoggerFactory.getLogger(TaskMonitor.class);
 
@@ -75,7 +74,8 @@ public class TaskMonitor {
   }
 
   /**
-   * Get singleton instance. TODO this would be better off scoped to a single daemon
+   * Get singleton instance. TODO this would be better off scoped to a single
+   * daemon
    */
   public static synchronized TaskMonitor get() {
     if (instance == null) {
@@ -92,7 +92,7 @@ public class TaskMonitor {
     MonitoredTask stat = new MonitoredTaskImpl(enableJournal);
     stat.setDescription(description);
     MonitoredTask proxy = (MonitoredTask) Proxy.newProxyInstance(stat.getClass().getClassLoader(),
-      new Class<?>[] { MonitoredTask.class }, new PassthroughInvocationHandler<>(stat));
+        new Class<?>[] { MonitoredTask.class }, new PassthroughInvocationHandler<>(stat));
     TaskAndWeakRefPair pair = new TaskAndWeakRefPair(stat, proxy);
     if (tasks.isFull()) {
       purgeExpiredTasks();
@@ -104,9 +104,8 @@ public class TaskMonitor {
   public synchronized MonitoredRPCHandler createRPCStatus(String description) {
     MonitoredRPCHandler stat = new MonitoredRPCHandlerImpl();
     stat.setDescription(description);
-    MonitoredRPCHandler proxy =
-      (MonitoredRPCHandler) Proxy.newProxyInstance(stat.getClass().getClassLoader(),
-        new Class<?>[] { MonitoredRPCHandler.class }, new PassthroughInvocationHandler<>(stat));
+    MonitoredRPCHandler proxy = (MonitoredRPCHandler) Proxy.newProxyInstance(stat.getClass().getClassLoader(),
+        new Class<?>[] { MonitoredRPCHandler.class }, new PassthroughInvocationHandler<MonitoredRPCHandler>(stat));
     TaskAndWeakRefPair pair = new TaskAndWeakRefPair(stat, proxy);
     rpcTasks.add(pair);
     return proxy;
@@ -118,10 +117,8 @@ public class TaskMonitor {
       for (Iterator<TaskAndWeakRefPair> it = rpcTasks.iterator(); it.hasNext();) {
         TaskAndWeakRefPair pair = it.next();
         MonitoredTask stat = pair.get();
-        if (
-          (stat.getState() == MonitoredTaskImpl.State.RUNNING)
-            && (now >= stat.getWarnTime() + rpcWarnTime)
-        ) {
+        if ((stat.getState() == MonitoredTaskImpl.State.RUNNING)
+            && (now >= stat.getWarnTime() + rpcWarnTime)) {
           LOG.warn("Task may be stuck: " + stat);
           stat.setWarnTime(now);
         }
@@ -150,8 +147,10 @@ public class TaskMonitor {
   }
 
   /**
-   * Produces a list containing copies of the current state of all non-expired MonitoredTasks
+   * Produces a list containing copies of the current state of all non-expired
+   * MonitoredTasks
    * handled by this TaskMonitor.
+   * 
    * @return A complete list of MonitoredTasks.
    */
   public List<MonitoredTask> getTasks() {
@@ -159,16 +158,17 @@ public class TaskMonitor {
   }
 
   /**
-   * Produces a list containing copies of the current state of all non-expired MonitoredTasks
+   * Produces a list containing copies of the current state of all non-expired
+   * MonitoredTasks
    * handled by this TaskMonitor.
+   * 
    * @param filter type of wanted tasks
    * @return A filtered list of MonitoredTasks.
    */
   public synchronized List<MonitoredTask> getTasks(String filter) {
     purgeExpiredTasks();
     TaskFilter taskFilter = createTaskFilter(filter);
-    ArrayList<MonitoredTask> results =
-      Lists.newArrayListWithCapacity(tasks.size() + rpcTasks.size());
+    ArrayList<MonitoredTask> results = Lists.newArrayListWithCapacity(tasks.size() + rpcTasks.size());
     processTasks(tasks, taskFilter, results);
     processTasks(rpcTasks, taskFilter, results);
     return results;
@@ -176,6 +176,7 @@ public class TaskMonitor {
 
   /**
    * Create a task filter according to a given filter type.
+   * 
    * @param filter type of monitored task
    * @return a task filter
    */
@@ -187,17 +188,17 @@ public class TaskMonitor {
         return task -> !(task instanceof MonitoredRPCHandler);
       case RPC:
         return task -> !(task instanceof MonitoredRPCHandler)
-          || !((MonitoredRPCHandler) task).isRPCRunning();
+            || !((MonitoredRPCHandler) task).isRPCRunning();
       case OPERATION:
         return task -> !(task instanceof MonitoredRPCHandler)
-          || !((MonitoredRPCHandler) task).isOperationRunning();
+            || !((MonitoredRPCHandler) task).isOperationRunning();
       default:
         return task -> false;
     }
   }
 
   private static void processTasks(Iterable<TaskAndWeakRefPair> tasks, TaskFilter filter,
-    List<MonitoredTask> results) {
+      List<MonitoredTask> results) {
     for (TaskAndWeakRefPair task : tasks) {
       MonitoredTask t = task.get();
       if (!filter.filter(t)) {
@@ -223,7 +224,7 @@ public class TaskMonitor {
         long completed = (now - task.getCompletionTimestamp()) / 1000;
         out.println("Completed " + completed + "s ago");
         out
-          .println("Ran for " + (task.getCompletionTimestamp() - task.getStartTime()) / 1000 + "s");
+            .println("Ran for " + (task.getCompletionTimestamp() - task.getStartTime()) / 1000 + "s");
       } else {
         out.println("Running for " + running + "s");
       }
@@ -238,7 +239,8 @@ public class TaskMonitor {
   }
 
   /**
-   * This class encapsulates an object as well as a weak reference to a proxy that passes through
+   * This class encapsulates an object as well as a weak reference to a proxy that
+   * passes through
    * calls to that object. In art form:
    *
    * <pre>
@@ -252,9 +254,12 @@ public class TaskMonitor {
    * StatAndWeakRefProxy  ------/
    * </pre>
    *
-   * Since we only return the Proxy to the creator of the MonitorableStatus, this means that they
-   * can leak that object, and we'll detect it since our weak reference will go null. But, we still
-   * have the actual object, so we can log it and display it as a leaked (incomplete) action.
+   * Since we only return the Proxy to the creator of the MonitorableStatus, this
+   * means that they
+   * can leak that object, and we'll detect it since our weak reference will go
+   * null. But, we still
+   * have the actual object, so we can log it and display it as a leaked
+   * (incomplete) action.
    */
   private static class TaskAndWeakRefPair {
     private MonitoredTask impl;
@@ -344,6 +349,7 @@ public class TaskMonitor {
 
     /**
      * Filter out unwanted task.
+     * 
      * @param task monitored task
      * @return false if a task is accepted, true if it is filtered
      */

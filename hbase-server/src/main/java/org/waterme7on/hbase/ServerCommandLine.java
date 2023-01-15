@@ -24,6 +24,8 @@ public abstract class ServerCommandLine extends Configured implements Tool {
      */
     protected abstract String getUsage();
 
+    private final Path rootDir = new Path(System.getProperty("user.dir"));
+
     /**
      * Print usage information for this command line.
      * 
@@ -85,11 +87,7 @@ public abstract class ServerCommandLine extends Configured implements Tool {
     public void doMain(String args[]) {
         try {
             Configuration conf = HBaseConfiguration.create();
-            Path rootDir = new Path(System.getProperty("user.dir"));
-            LOG.debug("doMain:" + rootDir.toString());
-            // conf.set("hbase.zookeeper.quorum", "172.17.0.2");
             conf.addResource(new Path(rootDir, "conf/hbase-site.xml"));
-            logHBaseConfigs(conf);
             int ret = ToolRunner.run(conf, this, args);
             if (ret != 0) {
                 System.exit(ret);

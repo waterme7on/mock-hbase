@@ -46,7 +46,6 @@ public class HMaster extends HRegionServer implements MasterServices {
     // MASTER is name of the webapp and the attribute name used stuffing this
     // instance into a web context !! AND OTHER PLACES !!
     public static final String MASTER = "master";
-    protected ServerName serverName;
     // flag set after we become the active master (used for testing)
     private volatile boolean activeMaster = false;
     private HRegion masterRegion;
@@ -80,8 +79,9 @@ public class HMaster extends HRegionServer implements MasterServices {
         try {
             Threads.setDaemonThreadRunning(new Thread(() -> TraceUtil.trace(() -> {
                 try {
-                    int infoPort = putUpJettyServer();
-                    startActiveMasterManager(infoPort);
+                    // TODO
+                    // int infoPort = putUpJettyServer();
+                    startActiveMasterManager(-1);
                 } catch (Throwable t) {
                     // Make sure we log the exception.
                     String error = "Failed to become Active Master";
@@ -96,6 +96,7 @@ public class HMaster extends HRegionServer implements MasterServices {
             // and
             // the super run call will do this for us.
             super.run();
+            LOG.debug("master exiting main loop");
         } finally {
             final Span span = TraceUtil.createSpan("HMaster exiting main loop");
             try (Scope ignored = span.makeCurrent()) {
@@ -108,22 +109,12 @@ public class HMaster extends HRegionServer implements MasterServices {
     }
 
     public void startActiveMasterManager(int infoPort) throws KeeperException {
-        // omit details such as backup nodes
+        // TODO
+        // omit details such as backup nodes, currently, we only support one master
 
         this.activeMasterManager.setInfoPort(infoPort);
         int timeout = conf.getInt(HConstants.ZK_SESSION_TIMEOUT, HConstants.DEFAULT_ZK_SESSION_TIMEOUT);
-        // If we're a backup master, stall until a primary to write this address
-        if (conf.getBoolean(HConstants.MASTER_TYPE_BACKUP, HConstants.DEFAULT_MASTER_TYPE_BACKUP)) {
-            LOG.debug("HMaster started in backup mode. Stalling until master znode is written.");
-            // This will only be a minute or so while the cluster starts up,
-            // so don't worry about setting watches on the parent znode
-            while (!activeMasterManager.hasActiveMaster()) {
-                LOG.debug("Waiting for master address and cluster state znode to be written.");
-                Threads.sleep(timeout);
-            }
-        }
-
-        MonitoredTask status = TaskMonitor.get().createStatus("Master startup"); // log
+        MonitoredTask status = TaskMonitor.get().createStatus("Master startup"); //
         status.setDescription("Master startup");
 
         try {
@@ -162,7 +153,11 @@ public class HMaster extends HRegionServer implements MasterServices {
             throw new IOException(msg);
         }
 
-        // TODO
+        LOG.debug("Jetty Server start up, address " + addr + ":" + infoPort);
+
+        // TODO simply return the infoport now, later we need to start a jetty server
+        // for information
+
         masterJettyServer = new Server();
 
         final ServerConnector connector = new ServerConnector(masterJettyServer);
@@ -213,15 +208,12 @@ public class HMaster extends HRegionServer implements MasterServices {
          */
         status.setStatus("Initializing Master file system");
         // always initialize the MemStoreLAB as we use a region to store data in master
-        // now, see
-        // localStore.
         initializeMemStoreChunkCreator(); // TODO
         this.fileSystemManager = new MasterFileSystem(conf); // do file read/write
         this.walManager = new MasterWalManager(this); // wal read/write into filesystem
 
         // The below two managers must be created before loading procedures, as they
-        // will be used during
-        // loading.
+        // will be used during loading.
         // initialize master local region
         masterRegion = HRegionFactory.create(this);
         rsListStorage = new MasterRegionServerList(masterRegion, this);
@@ -231,6 +223,7 @@ public class HMaster extends HRegionServer implements MasterServices {
 
     private ServerManager createServerManager(MasterServices master, RegionServerList storage) {
         // TODO
+        LOG.debug("createServerManager");
         return new ServerManager();
     }
 

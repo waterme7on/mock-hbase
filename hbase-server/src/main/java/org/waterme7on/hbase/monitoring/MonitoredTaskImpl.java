@@ -26,13 +26,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.GsonUtil;
-import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.hbase.thirdparty.com.google.common.collect.ImmutableList;
 import org.apache.hbase.thirdparty.com.google.gson.Gson;
 
-@InterfaceAudience.Private
-class MonitoredTaskImpl implements MonitoredTask {
+public class MonitoredTaskImpl implements MonitoredTask {
   private long startTime;
   private long statusTime;
   private long stateTime;
@@ -231,9 +229,12 @@ class MonitoredTaskImpl implements MonitoredTask {
   }
 
   /**
-   * Returns the status journal. This implementation of status journal is not thread-safe. Currently
-   * we use this to track various stages of flushes and compactions where we can use this/pretty
-   * print for post task analysis, by which time we are already done changing states (writing to
+   * Returns the status journal. This implementation of status journal is not
+   * thread-safe. Currently
+   * we use this to track various stages of flushes and compactions where we can
+   * use this/pretty
+   * print for post task analysis, by which time we are already done changing
+   * states (writing to
    * journal)
    */
   @Override

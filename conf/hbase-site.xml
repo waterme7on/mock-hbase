@@ -5,4 +5,8 @@
     <name>hbase.zookeeper.quorum</name>
     <value>172.17.0.2</value>
   </property>
+  <property>
+    <name>hbase.master.port</name>
+    <value>16000</value>
+  </property>
 </configuration>

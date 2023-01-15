@@ -1,6 +1,5 @@
 package org.waterme7on.hbase.master;
 
-
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import org.apache.hadoop.conf.Configuration;
@@ -21,7 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This class abstracts a bunch of operations the HMaster needs to interact with the underlying file
+ * This class abstracts a bunch of operations the HMaster needs to interact with
+ * the underlying file
  * system like creating the initial layout, checking file system status, etc.
  */
 public class MasterFileSystem {
@@ -41,7 +41,6 @@ public class MasterFileSystem {
     private final Path tempdir;
     // root hbase directory on the FS
     private final Path walRootDir;
-
 
     public MasterFileSystem(Configuration conf) throws IOException {
         this.conf = conf;
@@ -64,9 +63,10 @@ public class MasterFileSystem {
         createInitialFileSystemLayout();
     }
 
-    public void createInitialFileSystemLayout(){
-
+    public void createInitialFileSystemLayout() {
+        LOG.debug("createInitialFileSystemLayout");
     }
+
     public FileSystem getWALFileSystem() {
         return this.walFs;
     }
