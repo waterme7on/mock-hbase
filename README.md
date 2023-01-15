@@ -28,6 +28,17 @@ simply run:
 mvn package -DskipTests && ./bin/hbase.sh
 ```
 
+run standalone zookeeper:
+```
+# zookeeper server
+docker pull zookeeper
+docker run --name hbase-zookeeper --restart always -d zookeeper
+# add zookeeper's ip to conf/hbase-site.xml
+
+# zookeeper client (for test)
+docker run -it --rm --link hbase-zookeeper:zookeeper zookeeper zkCli.sh -server zookeeper
+```
+
 
 menu:
 - Resolve dependencies: `mvn dependency:resolve`
