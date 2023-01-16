@@ -7,7 +7,11 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.log.HBaseMarkers;
+import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionServerInfo;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService.BlockingInterface;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Addressing;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
@@ -20,17 +24,24 @@ import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.regionserver.HRegion;
 import org.waterme7on.hbase.regionserver.HRegionFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
+import org.waterme7on.hbase.regionserver.RSRpcServices;
+
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.lang.management.MemoryType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.ServerConnector;
 import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
+import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
+import org.waterme7on.hbase.ipc.RpcServer;
 import org.waterme7on.hbase.monitoring.MonitoredTask;
 import org.waterme7on.hbase.monitoring.TaskMonitor;
 
@@ -60,6 +71,7 @@ public class HMaster extends HRegionServer implements MasterServices {
     volatile boolean serviceStarted = false;
     // Time stamps for when a hmaster became active
     private long masterActiveTime;
+    // private final RegionServerTracker regionServerTracker;
 
     public HMaster(final Configuration conf) throws IOException {
         super(conf);
@@ -273,9 +285,37 @@ public class HMaster extends HRegionServer implements MasterServices {
 
         // Set the cluster as up. If new RSs, they'll be waiting on this before
         // going ahead with their startup.
+        LOG.debug(this.clusterStatusTracker.getNode());
         boolean wasUp = this.clusterStatusTracker.isClusterUp();
-        if (!wasUp)
+        if (!wasUp) {
             this.clusterStatusTracker.setClusterUp();
+            LOG.debug("cluster is up");
+        } else {
+            LOG.debug("cluster is already up");
+        }
+    }
+
+    public void shutdown() throws IOException {
+        TraceUtil.trace(() -> {
+            // Tell the servermanager cluster shutdown has been called. This makes it so
+            // when Master is
+            // last running server, it'll stop itself. Next, we broadcast the cluster
+            // shutdown by setting
+            // the cluster status as down. RegionServers will notice this change in state
+            // and will start
+            // shutting themselves down. When last has exited, Master can go down.
+            if (this.serverManager != null) {
+                this.serverManager.shutdownCluster();
+            }
+            if (this.clusterStatusTracker != null) {
+                try {
+                    this.clusterStatusTracker.setClusterDown();
+                } catch (KeeperException e) {
+                    LOG.error("ZooKeeper exception trying to set cluster as down in ZK", e);
+                }
+            }
+
+        }, "HMaster.shutdown");
     }
 
     private void startServiceThreads() throws IOException {
@@ -286,7 +326,7 @@ public class HMaster extends HRegionServer implements MasterServices {
     private ServerManager createServerManager(MasterServices master, RegionServerList storage) {
         // TODO
         LOG.debug("createServerManager");
-        return new ServerManager();
+        return new ServerManager(master, storage);
     }
 
     public void setInitialized(boolean isInitialized) {
@@ -311,7 +351,12 @@ public class HMaster extends HRegionServer implements MasterServices {
 
     @Override
     public void stop(String why) {
-
+        if (!isStopped()) {
+            super.stop(why);
+            if (this.activeMasterManager != null) {
+                this.activeMasterManager.stop();
+            }
+        }
     }
 
     @Override
@@ -325,8 +370,50 @@ public class HMaster extends HRegionServer implements MasterServices {
     }
 
     @Override
+    public ServerManager getServerManager() {
+        return this.serverManager;
+    }
+
+    @Override
     public MasterWalManager getMasterWalManager() {
         return this.walManager;
+    }
+
+    @Override
+    protected RSRpcServices createRpcServices() throws IOException {
+        return new MasterRpcServices(this);
+    }
+
+    public MasterRpcServices getMasterRpcServices() {
+        return (MasterRpcServices) rpcServices;
+    }
+
+    public void stopMaster() throws IOException {
+        stop("Stopped by " + Thread.currentThread().getName());
+    }
+
+    protected void checkServiceStarted() throws ServerNotRunningYetException {
+        if (!serviceStarted) {
+            throw new ServerNotRunningYetException("Server is not running yet");
+        }
+    }
+
+    /** Returns Get remote side's InetAddress */
+    InetAddress getRemoteInetAddress(final int port, final long serverStartCode)
+            throws UnknownHostException {
+        // Do it out here in its own little method so can fake an address when
+        // mocking up in tests.
+        InetAddress ia = RpcServer.getRemoteIp();
+
+        // The call could be from the local regionserver,
+        // in which case, there is no remote address.
+        if (ia == null && serverStartCode == startcode) {
+            InetSocketAddress isa = rpcServices.getSocketAddress();
+            if (isa != null && isa.getPort() == port) {
+                ia = isa.getAddress();
+            }
+        }
+        return ia;
     }
 
     /**
@@ -357,4 +444,5 @@ public class HMaster extends HRegionServer implements MasterServices {
         LOG.info("STARTING service " + HMaster.class.getSimpleName());
         new HMasterCommandLine(HMaster.class).doMain(args);
     }
+
 }

@@ -17,6 +17,11 @@ public abstract class RpcServer implements RpcServerInterface {
     public static final int DEFAULT_MAX_REQUEST_SIZE = DEFAULT_MAX_CALLQUEUE_SIZE / 4; // 256M
 
     /* Attributes */
+    /**
+     * This is set to Call object before Handler invokes an RPC and ybdie after the
+     * call returns.
+     */
+    protected static final ThreadLocal<RpcCall> CurCall = new ThreadLocal<>();
     protected final Server server;
     protected final RpcScheduler scheduler;
     protected final InetSocketAddress bindAddress;
@@ -74,5 +79,17 @@ public abstract class RpcServer implements RpcServerInterface {
         public BlockingService getBlockingService() {
             return this.service;
         }
+    }
+
+    /**
+     * Returns the remote side ip address when invoked inside an RPC Returns null
+     * incase of an error.
+     */
+    public static InetAddress getRemoteIp() {
+        RpcCall call = CurCall.get();
+        if (call != null) {
+            return call.getRemoteAddress();
+        }
+        return null;
     }
 }

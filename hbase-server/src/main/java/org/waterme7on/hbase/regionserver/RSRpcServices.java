@@ -187,4 +187,7 @@ public class RSRpcServices implements HBaseRPCErrorHandler {
         rpcServer.stop();
     }
 
+    public InetSocketAddress getSocketAddress() {
+        return isa;
+    }
 }

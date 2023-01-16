@@ -5,22 +5,42 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.NotServingRegionException;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.ClusterConnection;
 import org.apache.hadoop.hbase.ipc.RpcClient;
+import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.security.User;
+import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionServerInfo;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.LockServiceProtos.LockService;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
+import org.apache.hadoop.hbase.util.RetryCounter;
+import org.apache.hadoop.hbase.util.RetryCounterFactory;
+import org.apache.hadoop.hbase.util.Sleeper;
 import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
 import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
 import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
 import org.apache.hadoop.hbase.zookeeper.ZKNodeTracker;
+import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
+import org.apache.hadoop.ipc.RemoteException;
+import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
+import org.apache.zookeeper.KeeperException;
 import org.apache.commons.lang3.StringUtils;
 import org.waterme7on.hbase.fs.HFileSystem;
 import org.waterme7on.hbase.ipc.RpcClientFactory;
+import org.waterme7on.hbase.master.HMaster;
 import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
+
+import com.google.protobuf.ServiceException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,13 +75,25 @@ public class HRegionServer extends Thread implements RegionServerServices {
      * All access should be synchronized.
      */
     private final Map<String, HRegion> onlineRegions = new ConcurrentHashMap<>();
-
+    // A sleeper that sleeps for msgInterval.
+    protected final Sleeper sleeper;
+    private final int shortOperationTimeout;
+    // flag set after we're done setting up server threads
+    final AtomicBoolean online = new AtomicBoolean(false);
     /*
      * MemStore components
      */
     private MemStoreFlusher cacheFlusher;
 
     private HeapMemoryManager hMemManager;
+
+    // Stub to do region server status calls against the master.
+    private volatile RegionServerStatusService.BlockingInterface rssStub;
+    private volatile LockService.BlockingInterface lockStub;
+    // RPC client. Used to make the stub above that does region server status
+    // checking.
+    private RpcClient rpcClient;
+
     // master address tracker
     private final MasterAddressTracker masterAddressTracker;
     // Cluster Status Tracker
@@ -70,11 +102,10 @@ public class HRegionServer extends Thread implements RegionServerServices {
     /*
      * HDFS components
      */
+    private volatile boolean dataFsOk;
     private HFileSystem dataFs;
     private HFileSystem walFs;
-    // RPC client. Used to make the stub above that does region server status
-    // checking.
-    private RpcClient rpcClient;
+
     /**
      * Unique identifier for the cluster we are a part of.
      */
@@ -117,6 +148,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
         try (Scope ignored = span.makeCurrent()) {
             this.startcode = EnvironmentEdgeManager.currentTime();
             this.conf = conf;
+            this.dataFsOk = true;
             this.masterless = conf.getBoolean(MASTERLESS_CONFIG_NAME, false);
             this.eventLoopGroupConfig = setupNetty(this.conf);
             // initialize hdfs
@@ -133,6 +165,10 @@ public class HRegionServer extends Thread implements RegionServerServices {
             this.stopped = false;
             this.abortRequested = new AtomicBoolean(false);
             this.msgInterval = conf.getInt("hbase.regionserver.msginterval", 3 * 1000);
+            this.sleeper = new Sleeper(this.msgInterval, this);
+            this.shortOperationTimeout = conf.getInt(HConstants.HBASE_RPC_SHORTOPERATION_TIMEOUT_KEY,
+                    HConstants.DEFAULT_HBASE_RPC_SHORTOPERATION_TIMEOUT);
+
             // If no master in cluster, skip trying to track one or look for a cluster
             // status.
             if (!this.masterless) {
@@ -252,6 +288,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
         }
 
         try {
+            // TODO: register with master
             if (!isStopped() && !isAborted()) {
                 // Try and register with the Master; tell it we are here. Break if server is
                 // stopped or
@@ -260,20 +297,54 @@ public class HRegionServer extends Thread implements RegionServerServices {
                 // start up all Services. Use RetryCounter to get backoff in case Master is
                 // struggling to
                 // come up.
+                LOG.debug("About to register with Master.");
+                TraceUtil.trace(() -> {
+                    RetryCounterFactory rcf = new RetryCounterFactory(Integer.MAX_VALUE, this.sleeper.getPeriod(),
+                            1000 * 60 * 5);
+                    RetryCounter rc = rcf.create();
+                    while (keepLooping()) {
+                        RegionServerStartupResponse w = reportForDuty();
+                        if (w == null) {
+                            long sleepTime = rc.getBackoffTimeAndIncrementAttempts();
+                            LOG.warn("reportForDuty failed; sleeping {} ms and then retrying.", sleepTime);
+                            this.sleeper.sleep(sleepTime);
+                        } else {
+                            LOG.debug("reportForDuty succeeded; continuing.");
+                            handleReportForDutyResponse(w);
+                            break;
+                        }
+                    }
+                }, "HRegionServer.registerWithMaster");
+
+            }
+            // TODO: start handlers
+
+            // TODO: main run loop
+            // We registered with the Master. Go into run mode.
+            long lastMsg = EnvironmentEdgeManager.currentTime();
+            long oldRequestCount = -1;
+            while (!isStopped() && isHealthy()) {
+                LOG.debug("running...");
+                // the main run loop
+                long now = EnvironmentEdgeManager.currentTime();
+                if ((now - lastMsg) >= msgInterval) {
+                    // tryRegionServerReport(lastMsg, now);
+                    lastMsg = EnvironmentEdgeManager.currentTime();
+                }
+                if (!isStopped() && !isAborted()) {
+                    this.sleeper.sleep();
+                }
             }
         } catch (Throwable e) {
             abort("Fatal exception during registration", e);
         }
 
-        for (int i = 0; i < 3; i++) {
-            try {
-                if (!isStopped() && !isAborted()) {
-                    LOG.debug("running...");
-                    Thread.sleep(1000);
-                }
-            } catch (InterruptedException e) {
-                LOG.error("Interrupted", e);
-            }
+        try {
+            deleteMyEphemeralNode();
+        } catch (KeeperException.NoNodeException nn) {
+            // pass
+        } catch (KeeperException e) {
+            LOG.warn("Failed deleting my ephemeral node", e);
         }
     }
 
@@ -389,5 +460,265 @@ public class HRegionServer extends Thread implements RegionServerServices {
      */
     protected synchronized void setupClusterConnection() throws IOException {
         return;
+    }
+
+    /*
+     * Verify that server is healthy
+     */
+    private boolean isHealthy() {
+        if (!dataFsOk) {
+            // File system problem
+            return false;
+        }
+        // Verify that all threads are alive
+        boolean healthy = true;
+        if (!healthy) {
+            stop("One or more threads are no longer alive -- stop");
+        }
+        return healthy;
+    }
+
+    /**
+     * Checks to see if the file system is still accessible. If not, sets
+     * abortRequested and
+     * stopRequested
+     * 
+     * @return false if file system is not available
+     */
+    boolean checkFileSystem() {
+        // if (this.dataFsOk && this.dataFs != null) {
+        // try {
+        // FSUtils.checkFileSystemAvailable(this.dataFs);
+        // } catch (IOException e) {
+        // abort("File System not available", e);
+        // this.dataFsOk = false;
+        // }
+        // }
+        return this.dataFsOk;
+    }
+
+    /**
+     * @return True if we should break loop because cluster is going down or this
+     *         server has been
+     *         stopped or hdfs has gone bad.
+     */
+    private boolean keepLooping() {
+        return !this.stopped && isClusterUp();
+    }
+
+    /*
+     * Let the master know we're here Run initialization using parameters passed us
+     * by the master.
+     * 
+     * @return A Map of key/value configurations we got from the Master else null if
+     * we failed to
+     * register.
+     */
+    private RegionServerStartupResponse reportForDuty() throws IOException {
+        if (this.masterless) {
+            return RegionServerStartupResponse.getDefaultInstance();
+        }
+        ServerName masterServerName = createRegionServerStatusStub(true);
+        RegionServerStatusService.BlockingInterface rss = rssStub;
+        if (masterServerName == null || rss == null) {
+            return null;
+        }
+        RegionServerStartupResponse result = null;
+        try {
+            LOG.info("reportForDuty to master=" + masterServerName + " with isa=" + rpcServices.isa
+                    + ", startcode=" + this.startcode);
+            long now = EnvironmentEdgeManager.currentTime();
+            int port = rpcServices.isa.getPort();
+            RegionServerStartupRequest.Builder request = RegionServerStartupRequest.newBuilder();
+            if (!StringUtils.isBlank(useThisHostnameInstead)) {
+                request.setUseThisHostnameInstead(useThisHostnameInstead);
+            }
+            request.setPort(port);
+            request.setServerStartCode(this.startcode);
+            request.setServerCurrentTime(now);
+            result = rss.regionServerStartup(null, request.build());
+        } catch (Exception e) {
+            LOG.debug("Error talking to master", e);
+            rssStub = null;
+        }
+        return result;
+    }
+
+    /**
+     * Get the current master from ZooKeeper and open the RPC connection to it. To
+     * get a fresh
+     * connection, the current rssStub must be null. Method will block until a
+     * master is available.
+     * You can break from this block by requesting the server stop.
+     * 
+     * @param refresh If true then master address will be read from ZK, otherwise
+     *                use cached data
+     * @return master + port, or null if server has been stopped
+     */
+    protected synchronized ServerName createRegionServerStatusStub(boolean refresh) {
+        if (rssStub != null) {
+            return masterAddressTracker.getMasterAddress();
+        }
+        ServerName sn = null;
+        long previousLogTime = 0;
+        RegionServerStatusService.BlockingInterface intRssStub = null;
+        LockService.BlockingInterface intLockStub = null;
+        boolean interrupted = false;
+        try {
+            while (keepLooping()) {
+                sn = this.masterAddressTracker.getMasterAddress(refresh);
+                LOG.debug("createRegionServerStatusStub: sn=" + sn + ", refresh=" + refresh);
+                if (sn == null) {
+                    if (!keepLooping()) {
+                        // give up with no connection.
+                        LOG.debug("No master found and cluster is stopped; bailing out");
+                        return null;
+                    }
+                    if (EnvironmentEdgeManager.currentTime() > (previousLogTime + 1000)) {
+                        LOG.debug("No master found; retry");
+                        previousLogTime = EnvironmentEdgeManager.currentTime();
+                    }
+                    refresh = true; // let's try pull it from ZK directly
+                    if (sleepInterrupted(200)) {
+                        interrupted = true;
+                    }
+                    continue;
+                }
+
+                // If we are on the active master, use the shortcut
+                if (this instanceof HMaster && sn.equals(getServerName())) {
+                    intRssStub = ((HMaster) this).getMasterRpcServices();
+                    intLockStub = ((HMaster) this).getMasterRpcServices();
+                    LOG.debug("this server is the master, using shortcut");
+                    break;
+                }
+                try {
+                    BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(sn,
+                            User.getCurrent(), shortOperationTimeout);
+                    intRssStub = RegionServerStatusService.newBlockingStub(channel);
+                    intLockStub = LockService.newBlockingStub(channel);
+                    break;
+                } catch (IOException e) {
+                    if (EnvironmentEdgeManager.currentTime() > (previousLogTime + 1000)) {
+                        e = e instanceof RemoteException ? ((RemoteException) e).unwrapRemoteException() : e;
+                        if (e instanceof ServerNotRunningYetException) {
+                            LOG.info("Master isn't available yet, retrying");
+                        } else {
+                            LOG.warn("Unable to connect to master. Retrying. Error was:", e);
+                        }
+                        previousLogTime = EnvironmentEdgeManager.currentTime();
+                    }
+                    if (sleepInterrupted(200)) {
+                        interrupted = true;
+                    }
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        this.rssStub = intRssStub;
+        this.lockStub = intLockStub;
+        LOG.debug(intRssStub + " - " + intLockStub);
+        return sn;
+    }
+
+    private static boolean sleepInterrupted(long millis) {
+        boolean interrupted = false;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            LOG.warn("Interrupted while sleeping");
+            interrupted = true;
+        }
+        return interrupted;
+    }
+
+    /*
+     * Run init. Sets up wal and starts up all server threads.
+     * 
+     * @param c Extra configuration.
+     */
+    protected void handleReportForDutyResponse(final RegionServerStartupResponse c) throws IOException {
+        // Set our ephemeral znode up in zookeeper now we have a name.
+        try {
+            createMyEphemeralNode();
+        } catch (Throwable e) {
+            stop("Failed initialization");
+            throw convertThrowableToIOE(cleanup(e, "Failed init"), "Region server startup failed");
+        } finally {
+            sleeper.skipSleepCycle();
+        }
+        // TODO ...
+
+        // Set up ZK
+        LOG.info(
+                "Serving as " + this.serverName + ", RpcServer on " + rpcServices.isa + ", sessionid=0x"
+                        + Long.toHexString(this.zooKeeper.getRecoverableZooKeeper().getSessionId()));
+
+        // Wake up anyone waiting for this server to online
+        synchronized (online) {
+            online.set(true);
+            online.notifyAll();
+        }
+    }
+
+    @Override
+    public ServerName getServerName() {
+        return serverName;
+    }
+
+    /**
+     * @param msg Message to put in new IOE if passed <code>t</code> is not an IOE
+     * @return Make <code>t</code> an IOE if it isn't already.
+     */
+    private IOException convertThrowableToIOE(final Throwable t, final String msg) {
+        return (t instanceof IOException ? (IOException) t
+                : msg == null || msg.length() == 0 ? new IOException(t)
+                        : new IOException(msg, t));
+    }
+
+    private void createMyEphemeralNode() throws KeeperException {
+        RegionServerInfo.Builder rsInfo = RegionServerInfo.newBuilder();
+        // rsInfo.setInfoPort(infoServer != null ? infoServer.getPort() : -1);
+        // rsInfo.setVersionInfo(ProtobufUtil.getVersionInfo());
+        byte[] data = ProtobufUtil.prependPBMagic(rsInfo.build().toByteArray());
+        ZKUtil.createEphemeralNodeAndWatch(this.zooKeeper, getMyEphemeralNodePath(), data);
+    }
+
+    private void deleteMyEphemeralNode() throws KeeperException {
+        ZKUtil.deleteNode(this.zooKeeper, getMyEphemeralNodePath());
+    }
+
+    private String getMyEphemeralNodePath() {
+        return zooKeeper.getZNodePaths().getRsPath(serverName);
+    }
+
+    /**
+     * Cleanup after Throwable caught invoking method. Converts <code>t</code> to
+     * IOE if it isn't
+     * already.
+     * 
+     * @param t   Throwable
+     * @param msg Message to log in error. Can be null.
+     * @return Throwable converted to an IOE; methods can only let out IOEs.
+     */
+    private Throwable cleanup(final Throwable t, final String msg) {
+        // Don't log as error if NSRE; NSRE is 'normal' operation.
+        if (t instanceof NotServingRegionException) {
+            LOG.debug("NotServingRegionException; " + t.getMessage());
+            return t;
+        }
+        Throwable e = t instanceof RemoteException ? ((RemoteException) t).unwrapRemoteException() : t;
+        if (msg == null) {
+            LOG.error("", e);
+        } else {
+            LOG.error(msg, e);
+        }
+        if (!rpcServices.checkOOME(t)) {
+            checkFileSystem();
+        }
+        return t;
     }
 }

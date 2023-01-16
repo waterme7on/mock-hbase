@@ -8,6 +8,7 @@ import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.waterme7on.hbase.Server;
@@ -163,5 +164,32 @@ public class ActiveMasterManager extends ZKListener {
             }
         }
         return false;
+    }
+
+    public void stop() {
+        try {
+            synchronized (clusterHasActiveMaster) {
+                // Master is already stopped, wake up the manager
+                // thread so that it can shutdown soon.
+                clusterHasActiveMaster.notifyAll();
+            }
+            // If our address is in ZK, delete it on our way out
+            ServerName activeMaster = null;
+            try {
+                activeMaster = MasterAddressTracker.getMasterAddress(this.watcher);
+            } catch (IOException e) {
+                LOG.warn("Failed get of master address: " + e.toString());
+            }
+            if (activeMaster != null && activeMaster.equals(this.sn)) {
+                ZKUtil.deleteNode(watcher, watcher.getZNodePaths().masterAddressZNode);
+                // // We may have failed to delete the znode at the previous step, but
+                // // we delete the file anyway: a second attempt to delete the znode is likely
+                // to
+                // // fail again.
+                // ZNodeClearer.deleteMyEphemeralNodeOnDisk();
+            }
+        } catch (KeeperException e) {
+            LOG.debug(this.watcher.prefix("Failed delete of our master address node; " + e.getMessage()));
+        }
     }
 }
