@@ -1,21 +1,26 @@
 package org.waterme7on.hbase.regionserver;
 
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.client.ClusterConnection;
+import org.apache.hadoop.hbase.ipc.RpcClient;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
-import org.apache.hadoop.util.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.waterme7on.hbase.fs.HFileSystem;
+import org.waterme7on.hbase.ipc.RpcClientFactory;
 import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -58,7 +63,23 @@ public class HRegionServer extends Thread implements RegionServerServices {
      */
     private HFileSystem dataFs;
     private HFileSystem walFs;
-
+    // RPC client. Used to make the stub above that does region server status
+    // checking.
+    private RpcClient rpcClient;
+    /**
+     * Unique identifier for the cluster we are a part of.
+     */
+    protected String clusterId;
+    /**
+     * Cluster connection to be shared by services. Initialized at server startup
+     * and closed when
+     * server shuts down. Clients must never close it explicitly. Clients hosted by
+     * this Server should
+     * make use of this clusterConnection rather than create their own; if they
+     * create their own,
+     * there is no way for the hosting server to shutdown ongoing client RPCs.
+     */
+    protected ClusterConnection clusterConnection;
     /**
      * True if this RegionServer is coming up in a cluster where there is no Master;
      * means it needs to
@@ -95,7 +116,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
             this.rpcServices = createRpcServices();
             this.zooKeeper = new ZKWatcher(conf, getProcessName() + ":" + rpcServices.isa.getPort(), this,
                     canCreateBaseZNode());
-            String hostName = org.apache.commons.lang3.StringUtils.isBlank(useThisHostnameInstead)
+            String hostName = StringUtils.isBlank(useThisHostnameInstead)
                     ? this.rpcServices.isa.getHostName()
                     : this.useThisHostnameInstead;
             this.serverName = ServerName.valueOf(hostName, this.rpcServices.isa.getPort(), this.startcode);
@@ -230,5 +251,23 @@ public class HRegionServer extends Thread implements RegionServerServices {
      * In here we just put up the RpcServer, setup Connection, and ZooKeeper.
      */
     private void preRegistrationInitialization() {
-    };
+        final Span span = TraceUtil.createSpan("HRegionServer.preRegistrationInitialization");
+        try (Scope ignored = span.makeCurrent()) {
+            // initializeZooKeeper();
+            // setupClusterConnection();
+            // // Setup RPC client for master communication
+            this.rpcClient = RpcClientFactory.createClient(conf, clusterId,
+                    new InetSocketAddress(this.rpcServices.isa.getAddress(), 0),
+                    clusterConnection.getConnectionMetrics());
+            span.setStatus(StatusCode.OK);
+        } catch (Throwable t) {
+            // Call stop if error or process will stick around for ever since server
+            // puts up non-daemon threads.
+            TraceUtil.setError(span, t);
+            this.rpcServices.stop();
+            abort("Initialization of RS failed.  Hence aborting RS.", t);
+        } finally {
+            span.end();
+        }
+    }
 }

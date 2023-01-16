@@ -178,4 +178,13 @@ public class RSRpcServices implements HBaseRPCErrorHandler {
         }
         return stop;
     }
+
+    void stop() {
+        // if (zkPermissionWatcher != null) {
+        //     zkPermissionWatcher.close();
+        // }
+        // closeAllScanners();
+        rpcServer.stop();
+    }
+
 }
