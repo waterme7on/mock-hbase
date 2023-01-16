@@ -4,11 +4,13 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.log.HBaseMarkers;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Addressing;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.util.VersionInfo;
@@ -27,6 +29,7 @@ import java.net.InetAddress;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.ServerConnector;
+import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 import org.waterme7on.hbase.monitoring.MonitoredTask;
 import org.waterme7on.hbase.monitoring.TaskMonitor;
@@ -52,6 +55,11 @@ public class HMaster extends HRegionServer implements MasterServices {
     private RegionServerList rsListStorage;
     // server manager to deal with region server info
     private volatile ServerManager serverManager;
+    // flag set after master services are started,
+    // initialization may have not completed yet.
+    volatile boolean serviceStarted = false;
+    // Time stamps for when a hmaster became active
+    private long masterActiveTime;
 
     public HMaster(final Configuration conf) throws IOException {
         super(conf);
@@ -207,24 +215,84 @@ public class HMaster extends HRegionServer implements MasterServices {
          * We are active master now... go initialize components we need to run.
          */
         status.setStatus("Initializing Master file system");
+        this.masterActiveTime = EnvironmentEdgeManager.currentTime();
+
         // always initialize the MemStoreLAB as we use a region to store data in master
         initializeMemStoreChunkCreator(); // TODO
         this.fileSystemManager = new MasterFileSystem(conf); // do file read/write
         this.walManager = new MasterWalManager(this); // wal read/write into filesystem
 
+        // Publish cluster ID; set it in Master too. The superclass RegionServer does
+        // this later but
+        // only after it has checked in with the Master. At least a few tests ask Master
+        // for clusterId
+        // before it has called its run method and before RegionServer has done the
+        // reportForDuty.
+        ClusterId clusterId = fileSystemManager.getClusterId();
+        status.setStatus("Publishing Cluster ID " + clusterId + " in ZooKeeper");
+        ZKClusterId.setClusterId(this.zooKeeper,
+                clusterId);
+        this.clusterId = clusterId.toString();
+        LOG.debug("zookeeper:" + this.zooKeeper.toString());
+        LOG.debug("clusterId:" + this.clusterId);
+
+        status.setStatus("Initialize ServerManager and schedule SCP for crash servers");
         // The below two managers must be created before loading procedures, as they
         // will be used during loading.
         // initialize master local region
         masterRegion = HRegionFactory.create(this);
         rsListStorage = new MasterRegionServerList(masterRegion, this);
         this.serverManager = createServerManager(this, rsListStorage);
+        // TODO...
+
+        status.setStatus("Initializing ZK system trackers");
+        initializeZKBasedSystemTrackers();
+        // Set ourselves as active Master now our claim has succeeded up in zk.
         this.activeMaster = true;
+
+        // TODO...
+
+        // start up all service threads.
+        status.setStatus("Initializing master service threads");
+        startServiceThreads();
+
+        // TODO...
+
+        // Set master as 'initialized'.
+        status.markComplete("Initialization successful");
+        setInitialized(true);
+
+        // TODO...
+        LOG.debug("Master finish ActiveMasterInitialization and become active");
+    }
+
+    private void initializeZKBasedSystemTrackers()
+            throws IOException, KeeperException {
+        // TODO
+        LOG.debug("initializeZKBasedSystemTrackers");
+
+        // Set the cluster as up. If new RSs, they'll be waiting on this before
+        // going ahead with their startup.
+        boolean wasUp = this.clusterStatusTracker.isClusterUp();
+        if (!wasUp)
+            this.clusterStatusTracker.setClusterUp();
+    }
+
+    private void startServiceThreads() throws IOException {
+        // TODO
+        LOG.debug("startServiceThreads");
     }
 
     private ServerManager createServerManager(MasterServices master, RegionServerList storage) {
         // TODO
         LOG.debug("createServerManager");
         return new ServerManager();
+    }
+
+    public void setInitialized(boolean isInitialized) {
+        // procedureExecutor.getEnvironment().setEventReady(initialized, isInitialized);
+        // TODO
+        serviceStarted = true;
     }
 
     protected ActiveMasterManager createActiveMasterManager(ZKWatcher zk, ServerName sn,

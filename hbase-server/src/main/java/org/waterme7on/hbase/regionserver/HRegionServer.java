@@ -8,9 +8,14 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.ClusterConnection;
 import org.apache.hadoop.hbase.ipc.RpcClient;
+import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
+import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
+import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
+import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
+import org.apache.hadoop.hbase.zookeeper.ZKNodeTracker;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 import org.apache.commons.lang3.StringUtils;
 import org.waterme7on.hbase.fs.HFileSystem;
@@ -57,6 +62,10 @@ public class HRegionServer extends Thread implements RegionServerServices {
     private MemStoreFlusher cacheFlusher;
 
     private HeapMemoryManager hMemManager;
+    // master address tracker
+    private final MasterAddressTracker masterAddressTracker;
+    // Cluster Status Tracker
+    protected final ClusterStatusTracker clusterStatusTracker;
 
     /*
      * HDFS components
@@ -100,6 +109,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
     // Go down hard. Used if file system becomes unavailable and also in
     // debugging and unit tests.
     private AtomicBoolean abortRequested;
+    final int msgInterval;
 
     public HRegionServer(final Configuration conf) throws IOException {
         super("RegionServer"); // thread name
@@ -122,6 +132,24 @@ public class HRegionServer extends Thread implements RegionServerServices {
             this.serverName = ServerName.valueOf(hostName, this.rpcServices.isa.getPort(), this.startcode);
             this.stopped = false;
             this.abortRequested = new AtomicBoolean(false);
+            this.msgInterval = conf.getInt("hbase.regionserver.msginterval", 3 * 1000);
+            // If no master in cluster, skip trying to track one or look for a cluster
+            // status.
+            if (!this.masterless) {
+                // if (conf.getBoolean(HBASE_SPLIT_WAL_COORDINATED_BY_ZK,
+                // DEFAULT_HBASE_SPLIT_COORDINATED_BY_ZK)) {
+                // this.csm = new ZkCoordinatedStateManager(this);
+                // }
+
+                masterAddressTracker = new MasterAddressTracker(getZooKeeper(), this);
+                masterAddressTracker.start();
+
+                clusterStatusTracker = new ClusterStatusTracker(zooKeeper, this);
+                clusterStatusTracker.start();
+            } else {
+                masterAddressTracker = null;
+                clusterStatusTracker = null;
+            }
         } catch (Throwable t) {
             // Make sure we log the exception. HRegionServer is often started via reflection
             // and the
@@ -132,6 +160,11 @@ public class HRegionServer extends Thread implements RegionServerServices {
         } finally {
             span.end();
         }
+    }
+
+    @Override
+    public ZKWatcher getZooKeeper() {
+        return zooKeeper;
     }
 
     public NettyEventLoopGroupConfig getEventLoopGroupConfig() {
@@ -232,7 +265,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
             abort("Fatal exception during registration", e);
         }
 
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 3; i++) {
             try {
                 if (!isStopped() && !isAborted()) {
                     LOG.debug("running...");
@@ -253,21 +286,108 @@ public class HRegionServer extends Thread implements RegionServerServices {
     private void preRegistrationInitialization() {
         final Span span = TraceUtil.createSpan("HRegionServer.preRegistrationInitialization");
         try (Scope ignored = span.makeCurrent()) {
-            // initializeZooKeeper();
-            // setupClusterConnection();
-            // // Setup RPC client for master communication
+            initializeZooKeeper();
+            setupClusterConnection();
+            // Setup RPC client for master communication
             this.rpcClient = RpcClientFactory.createClient(conf, clusterId,
                     new InetSocketAddress(this.rpcServices.isa.getAddress(), 0),
-                    clusterConnection.getConnectionMetrics());
+                    null);
             span.setStatus(StatusCode.OK);
         } catch (Throwable t) {
             // Call stop if error or process will stick around for ever since server
             // puts up non-daemon threads.
             TraceUtil.setError(span, t);
+            t.printStackTrace();
+            LOG.debug("Error:" + t.toString());
             this.rpcServices.stop();
             abort("Initialization of RS failed.  Hence aborting RS.", t);
         } finally {
             span.end();
         }
+    }
+
+    /**
+     * Bring up connection to zk ensemble and then wait until a master for this
+     * cluster and then after
+     * that, wait until cluster 'up' flag has been set. This is the order in which
+     * master does things.
+     * <p>
+     * Finally open long-living server short-circuit connection.
+     */
+    private void initializeZooKeeper() throws IOException, InterruptedException {
+        // Nothing to do in here if no Master in the mix.
+        if (this.masterless) {
+            return;
+        }
+        // Create the master address tracker, register with zk, and start it. Then
+        // block until a master is available. No point in starting up if no master
+        // running.
+        blockAndCheckIfStopped(this.masterAddressTracker);
+        LOG.debug("Master address tracker is up.");
+
+        // Wait on cluster being up. Master will set this flag up in zookeeper
+        // when ready.
+        blockAndCheckIfStopped(this.clusterStatusTracker);
+        LOG.debug("Cluster status tracker is up.");
+
+        // If we are HMaster then the cluster id should have already been set.
+        if (clusterId == null) {
+            // Retrieve clusterId
+            // Since cluster status is now up
+            // ID should have already been set by HMaster
+            try {
+                clusterId = ZKClusterId.readClusterIdZNode(this.zooKeeper);
+                if (clusterId == null) {
+                    this.abort("Cluster ID has not been set");
+                }
+                LOG.info("ClusterId : " + clusterId);
+            } catch (Exception e) {
+                this.abort("Failed to retrieve Cluster ID", e);
+            }
+        }
+
+        waitForMasterActive();
+        if (isStopped() || isAborted()) {
+            return; // No need for further initialization
+        }
+    }
+
+    /**
+     * Utilty method to wait indefinitely on a znode availability while checking if
+     * the region server
+     * is shut down
+     * 
+     * @param tracker znode tracker to use
+     * @throws IOException          any IO exception, plus if the RS is stopped
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    private void blockAndCheckIfStopped(ZKNodeTracker tracker)
+            throws IOException, InterruptedException {
+        while (tracker.blockUntilAvailable(this.msgInterval, false) == null) {
+            if (this.stopped) {
+                throw new IOException("Received the shutdown message while waiting.");
+            }
+        }
+    }
+
+    /** Returns True if the cluster is up. */
+    @Override
+    public boolean isClusterUp() {
+        return this.masterless
+                || (this.clusterStatusTracker != null && this.clusterStatusTracker.isClusterUp());
+    }
+
+    /**
+     * Wait for an active Master. See override in Master superclass for how it is
+     * used.
+     */
+    protected void waitForMasterActive() {
+    }
+
+    /**
+     * Setup our cluster connection if not already initialized.
+     */
+    protected synchronized void setupClusterConnection() throws IOException {
+        return;
     }
 }
