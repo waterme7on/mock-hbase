@@ -16,3 +16,4 @@ hbase-*/test
 *.ipr
 *.jar
 .vscode/
+logs/

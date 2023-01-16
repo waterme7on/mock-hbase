@@ -25,7 +25,7 @@
 
 simply run:
 ```
-mvn package -DskipTests && ./bin/hbase.sh
+clear && mvn install -DskipTests && ./bin/hbase-daemon.sh start master
 ```
 
 run standalone zookeeper:
@@ -46,6 +46,22 @@ menu:
 - Run tests: `mvn test`
 - Run main processes: `java -jar hbase-server/target/hbase-server-1.0.jar`
 - Run with debug: `java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug -jar hbase-server/target/hbase-server-1.0.jar`
+
+## Dev Environment
+
+```
+Java:
+openjdk version "1.8.0_352"
+OpenJDK Runtime Environment (build 1.8.0_352-8u352-ga-1~20.04-b08)
+OpenJDK 64-Bit Server VM (build 25.352-b08, mixed mode)
+
+OS:
+Distributor ID: Ubuntu
+Description:    Ubuntu 20.04.5 LTS
+Release:        20.04
+Codename:       focal
+
+```
 
 ## Contribution
 

@@ -4,6 +4,12 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.CommandLine;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.GnuParser;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.Options;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.MasterNotRunningException;
+import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.client.Admin;
+import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
@@ -13,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.ServerCommandLine;
 
+import java.io.IOException;
 import java.util.List;
 
 public class HMasterCommandLine extends ServerCommandLine {
@@ -50,7 +57,26 @@ public class HMasterCommandLine extends ServerCommandLine {
     }
 
     private int stopMaster() {
-        // TODO
+        Configuration conf = getConf();
+        // Don't try more than once
+        conf.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 0);
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+            try (Admin admin = connection.getAdmin()) {
+                admin.shutdown();
+            } catch (Throwable t) {
+                LOG.error("Failed to stop master", t);
+                return 1;
+            }
+        } catch (MasterNotRunningException e) {
+            LOG.error("Master not running");
+            return 1;
+        } catch (ZooKeeperConnectionException e) {
+            LOG.error("ZooKeeper not available");
+            return 1;
+        } catch (IOException e) {
+            LOG.error("Got IOException: " + e.getMessage(), e);
+            return 1;
+        }
         return 0;
     }
 
