@@ -11,13 +11,20 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.hadoop.hbase.ipc.FallbackDisallowedException;
+import org.apache.hadoop.hbase.ipc.FatalConnectionException;
 import org.apache.hadoop.hbase.ipc.HBaseRpcController;
 import org.waterme7on.hbase.ipc.BufferCallBeforeInitHandler.BufferCallEvent;
 import org.apache.hadoop.hbase.ipc.HBaseRpcController.CancellationCallback;
+import org.apache.hadoop.hbase.security.NettyHBaseRpcConnectionHeaderHandler;
+import org.apache.hadoop.hbase.security.NettyHBaseSaslRpcClientHandler;
+import org.apache.hadoop.hbase.security.SaslChallengeDecoder;
 import org.apache.hadoop.hbase.util.NettyFutureUtils;
 import org.apache.hadoop.hbase.util.Threads;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,10 +40,15 @@ import org.apache.hbase.thirdparty.io.netty.channel.ChannelFuture;
 import org.apache.hbase.thirdparty.io.netty.channel.ChannelFutureListener;
 import org.apache.hbase.thirdparty.io.netty.channel.ChannelInitializer;
 import org.apache.hbase.thirdparty.io.netty.channel.ChannelOption;
+import org.apache.hbase.thirdparty.io.netty.channel.ChannelPipeline;
 import org.apache.hbase.thirdparty.io.netty.channel.EventLoop;
 import org.apache.hbase.thirdparty.io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import org.apache.hbase.thirdparty.io.netty.handler.timeout.IdleStateHandler;
+import org.apache.hbase.thirdparty.io.netty.handler.timeout.ReadTimeoutHandler;
 import org.apache.hbase.thirdparty.io.netty.util.ReferenceCountUtil;
+import org.apache.hbase.thirdparty.io.netty.util.concurrent.Future;
+import org.apache.hbase.thirdparty.io.netty.util.concurrent.FutureListener;
+import org.apache.hbase.thirdparty.io.netty.util.concurrent.Promise;
 
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RPCProtos.ConnectionHeader;
 
@@ -57,6 +69,10 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.RPCProtos.ConnectionHea
 class NettyRpcConnection extends RpcConnection {
 
     private static final Logger LOG = LoggerFactory.getLogger(NettyRpcConnection.class);
+
+    private static final ScheduledExecutorService RELOGIN_EXECUTOR = Executors
+            .newSingleThreadScheduledExecutor(new ThreadFactoryBuilder().setNameFormat("Relogin-pool-%d")
+                    .setDaemon(true).setUncaughtExceptionHandler(Threads.LOGGING_EXCEPTION_HANDLER).build());
 
     private final NettyRpcClient rpcClient;
 
@@ -138,10 +154,37 @@ class NettyRpcConnection extends RpcConnection {
                 .addBefore(BufferCallBeforeInitHandler.NAME, null,
                         new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, 4))
                 .addBefore(BufferCallBeforeInitHandler.NAME, null,
-                        new NettyRpcDuplexHandler(this, rpcClient.cellBlockBuilder, codec, compressor));
+                        new NettyRpcDuplexHandler(this, rpcClient.cellBlockBuilder, codec, compressor))
+                .fireUserEventTriggered(BufferCallEvent.success());
     }
 
     private boolean reloginInProgress;
+
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private void scheduleRelogin(Throwable error) {
+        assert eventLoop.inEventLoop();
+        if (error instanceof FallbackDisallowedException) {
+            return;
+        }
+        if (!provider.canRetry()) {
+            LOG.trace("SASL Provider does not support retries");
+            return;
+        }
+        if (reloginInProgress) {
+            return;
+        }
+        reloginInProgress = true;
+        RELOGIN_EXECUTOR.schedule(() -> {
+            try {
+                provider.relogin();
+            } catch (IOException e) {
+                LOG.warn("Relogin failed", e);
+            }
+            eventLoop.execute(() -> {
+                reloginInProgress = false;
+            });
+        }, ThreadLocalRandom.current().nextInt(reloginMaxBackoff), TimeUnit.MILLISECONDS);
+    }
 
     private void failInit(Channel ch, IOException e) {
         assert eventLoop.inEventLoop();
@@ -150,9 +193,82 @@ class NettyRpcConnection extends RpcConnection {
         shutdown0();
     }
 
+    private void saslNegotiate(final Channel ch) {
+        assert eventLoop.inEventLoop();
+        UserGroupInformation ticket = provider.getRealUser(remoteId.getTicket());
+        if (ticket == null) {
+            failInit(ch, new FatalConnectionException("ticket/user is null"));
+            return;
+        }
+        Promise<Boolean> saslPromise = ch.eventLoop().newPromise();
+        final NettyHBaseSaslRpcClientHandler saslHandler;
+        try {
+            saslHandler = new NettyHBaseSaslRpcClientHandler(saslPromise, ticket, provider, token,
+                    ((InetSocketAddress) ch.remoteAddress()).getAddress(), securityInfo,
+                    rpcClient.fallbackAllowed, this.rpcClient.conf);
+        } catch (IOException e) {
+            failInit(ch, e);
+            return;
+        }
+        ch.pipeline().addBefore(BufferCallBeforeInitHandler.NAME, null, new SaslChallengeDecoder())
+                .addBefore(BufferCallBeforeInitHandler.NAME, null, saslHandler);
+        NettyFutureUtils.addListener(saslPromise, new FutureListener<Boolean>() {
+
+            @Override
+            public void operationComplete(Future<Boolean> future) throws Exception {
+                if (future.isSuccess()) {
+                    ChannelPipeline p = ch.pipeline();
+                    p.remove(SaslChallengeDecoder.class);
+                    p.remove(NettyHBaseSaslRpcClientHandler.class);
+
+                    // check if negotiate with server for connection header is necessary
+                    if (saslHandler.isNeedProcessConnectionHeader()) {
+                        Promise<Boolean> connectionHeaderPromise = ch.eventLoop().newPromise();
+                        // create the handler to handle the connection header
+                        NettyHBaseRpcConnectionHeaderHandler chHandler = new NettyHBaseRpcConnectionHeaderHandler(
+                                connectionHeaderPromise, conf,
+                                connectionHeaderWithLength);
+
+                        // add ReadTimeoutHandler to deal with server doesn't response connection header
+                        // because of the different configuration in client side and server side
+                        final String readTimeoutHandlerName = "ReadTimeout";
+                        p.addBefore(BufferCallBeforeInitHandler.NAME, readTimeoutHandlerName,
+                                new ReadTimeoutHandler(rpcClient.readTO, TimeUnit.MILLISECONDS))
+                                .addBefore(BufferCallBeforeInitHandler.NAME, null, chHandler);
+                        NettyFutureUtils.addListener(connectionHeaderPromise, new FutureListener<Boolean>() {
+                            @Override
+                            public void operationComplete(Future<Boolean> future) throws Exception {
+                                if (future.isSuccess()) {
+                                    ChannelPipeline p = ch.pipeline();
+                                    p.remove(readTimeoutHandlerName);
+                                    p.remove(NettyHBaseRpcConnectionHeaderHandler.class);
+                                    // don't send connection header, NettyHBaseRpcConnectionHeaderHandler
+                                    // sent it already
+                                    established(ch);
+                                } else {
+                                    final Throwable error = future.cause();
+                                    scheduleRelogin(error);
+                                    failInit(ch, toIOE(error));
+                                }
+                            }
+                        });
+                    } else {
+                        // send the connection header to server
+                        NettyFutureUtils.safeWrite(ch, connectionHeaderWithLength.retainedDuplicate());
+                        established(ch);
+                    }
+                } else {
+                    final Throwable error = future.cause();
+                    scheduleRelogin(error);
+                    failInit(ch, toIOE(error));
+                }
+            }
+        });
+    }
+
     private void connect() throws UnknownHostException {
         assert eventLoop.inEventLoop();
-        LOG.debug("Connecting to {}", remoteId.getAddress());
+        LOG.trace("Connecting to {}", remoteId.getAddress());
         InetSocketAddress remoteAddr = getRemoteInetAddress(rpcClient.metrics);
         this.channel = new Bootstrap().group(eventLoop).channel(rpcClient.channelClass)
                 .option(ChannelOption.TCP_NODELAY, rpcClient.isTcpNoDelay())
@@ -181,15 +297,16 @@ class NettyRpcConnection extends RpcConnection {
                             // future.cause());
                             return;
                         }
-                        // NettyFutureUtils.safeWriteAndFlush(ch,
-                        // connectionHeaderPreamble.retainedDuplicate());
-                        // send the connection header to server
-                        NettyFutureUtils.safeWrite(ch, connectionHeaderWithLength.retainedDuplicate());
-                        established(ch);
+                        NettyFutureUtils.safeWriteAndFlush(ch, connectionHeaderPreamble.retainedDuplicate());
+                        if (useSasl) {
+                            saslNegotiate(ch);
+                        } else {
+                            // send the connection header to server
+                            NettyFutureUtils.safeWrite(ch, connectionHeaderWithLength.retainedDuplicate());
+                            established(ch);
+                        }
                     }
-                })
-                .channel();
-        LOG.debug("Connection to {} established, {}", remoteId.getAddress(), this.channel);
+                }).channel();
     }
 
     private void sendRequest0(Call call, HBaseRpcController hrc) throws IOException {
@@ -198,6 +315,7 @@ class NettyRpcConnection extends RpcConnection {
             throw new IOException("Can not send request because relogin is in progress.");
         }
         hrc.notifyOnCancel(new RpcCallback<Object>() {
+
             @Override
             public void run(Object parameter) {
                 setCancelled(call);
@@ -213,7 +331,6 @@ class NettyRpcConnection extends RpcConnection {
                     setCancelled(call);
                 } else {
                     if (channel == null) {
-                        LOG.debug("(sendRequest0)channel is null, create new connection");
                         connect();
                     }
                     scheduleTimeoutTask(call);
@@ -237,7 +354,6 @@ class NettyRpcConnection extends RpcConnection {
 
     @Override
     public void sendRequest(final Call call, HBaseRpcController hrc) {
-        LOG.debug("Sending request {} to {}", call, remoteId.getAddress());
         execute(eventLoop, () -> {
             try {
                 sendRequest0(call, hrc);

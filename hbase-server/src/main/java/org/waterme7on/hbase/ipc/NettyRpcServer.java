@@ -8,9 +8,11 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 import org.slf4j.Logger;
-
+import org.apache.hbase.thirdparty.com.google.protobuf.Message;
 import org.apache.hbase.thirdparty.io.netty.bootstrap.ServerBootstrap;
 import org.apache.hbase.thirdparty.io.netty.buffer.ByteBufAllocator;
+import org.apache.hadoop.hbase.CellScanner;
+import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.ReflectionUtils;
 import org.apache.hbase.thirdparty.io.netty.channel.*;
 import org.apache.hbase.thirdparty.io.netty.channel.group.ChannelGroup;
@@ -20,7 +22,6 @@ import org.apache.hbase.thirdparty.io.netty.util.concurrent.GlobalEventExecutor;
 
 import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
-import org.waterme7on.hbase.regionserver.RSRpcServices;
 import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
 
 public class NettyRpcServer extends RpcServer {
@@ -53,11 +54,11 @@ public class NettyRpcServer extends RpcServer {
      */
     volatile boolean running = true;
 
-    public NettyRpcServer(Server server, String name,
+    public NettyRpcServer(Server server, String name, List<BlockingServiceAndInterface> services,
             InetSocketAddress bindAddress, Configuration conf, RpcScheduler scheduler,
             boolean reservoirEnabled) throws IOException {
         // initialize rpc server
-        super(server, name, bindAddress, conf, scheduler, reservoirEnabled);
+        super(server, name, services, bindAddress, conf, scheduler, reservoirEnabled);
         LOG.debug("initializing NettyRpcServer");
         this.bindAddress = bindAddress;
         this.channelAllocator = getChannelAllocator(conf);
@@ -79,11 +80,11 @@ public class NettyRpcServer extends RpcServer {
                     protected void initChannel(Channel ch) throws Exception {
                         ch.config().setAllocator(channelAllocator);
                         ChannelPipeline pipeline = ch.pipeline();
-                        // FixedLengthFrameDecoder preambleDecoder = new FixedLengthFrameDecoder(6);
-                        // preambleDecoder.setSingleDecode(true);
-                        // pipeline.addLast("preambleDecoder", preambleDecoder);
-                        // pipeline.addLast("preambleHandler", createNettyRpcServerPreambleHandler());
-                        // pipeline.addLast("frameDecoder", new NettyRpcFrameDecoder(maxRequestSize));
+                        FixedLengthFrameDecoder preambleDecoder = new FixedLengthFrameDecoder(6);
+                        preambleDecoder.setSingleDecode(true);
+                        pipeline.addLast("preambleDecoder", preambleDecoder);
+                        pipeline.addLast("preambleHandler", createNettyRpcServerPreambleHandler());
+                        pipeline.addLast("frameDecoder", new NettyRpcFrameDecoder(maxRequestSize));
                         pipeline.addLast("decoder", new NettyRpcServerRequestDecoder(allChannels));
                         pipeline.addLast("encoder", new NettyRpcServerResponseEncoder());
                     }
@@ -156,8 +157,15 @@ public class NettyRpcServer extends RpcServer {
 
     @Override
     public String toString() {
-        return "[" + this.getClass().getSimpleName() + ":" + getListenerAddress() + "(Connections Number:"
-                + allChannels.size() + ")]";
+        String name = this.getClass().getSimpleName() + ":" + getListenerAddress() + "(Connections Number:"
+                + allChannels.size() + "), connections from {";
+        StringBuilder sb = new StringBuilder(name);
+        for (Channel channel : allChannels) {
+            sb.append(channel.remoteAddress() + ",");
+        }
+        sb.append("}");
+        return sb.toString();
+
     }
 
     // protected NettyRpcServerPreambleHandler createNettyRpcServerPreambleHandler()
@@ -174,5 +182,14 @@ public class NettyRpcServer extends RpcServer {
     public void setSocketSendBufSize(int size) {
 
     }
+
+    protected NettyRpcServerPreambleHandler createNettyRpcServerPreambleHandler() {
+        return new NettyRpcServerPreambleHandler(NettyRpcServer.this);
+    }
+
+    // @Override
+    // public Pair<Message, CellScanner> call(RpcCall call) throws IOException {
+    // return Super().call(call, null);
+    // }
 
 }

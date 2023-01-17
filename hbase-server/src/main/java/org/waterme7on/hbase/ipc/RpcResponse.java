@@ -1,6 +1,10 @@
 package org.waterme7on.hbase.ipc;
 
-public interface RpcResponse {
+/**
+ * An interface represent the response of an rpc call.
+ */
+interface RpcResponse {
+
     BufferChain getResponse();
 
     default void done() {

@@ -120,7 +120,6 @@ case $startStop in
   ;;
 (stop)
     rm -f "$HBASE_AUTOSTART_FILE"
-    echo running $command, logging to $HBASE_LOGOUT
     if [ -f $HBASE_PID ]; then
       pidToKill=`cat $HBASE_PID`
       # kill -0 == see if the PID exists

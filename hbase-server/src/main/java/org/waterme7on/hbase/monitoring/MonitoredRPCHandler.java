@@ -22,8 +22,10 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.hbase.thirdparty.com.google.protobuf.Message;
 
 /**
- * A MonitoredTask implementation optimized for use with RPC Handlers handling frequent, short
- * duration tasks. String concatenations and object allocations are avoided in methods that will be
+ * A MonitoredTask implementation optimized for use with RPC Handlers handling
+ * frequent, short
+ * duration tasks. String concatenations and object allocations are avoided in
+ * methods that will be
  * hit by every RPC call.
  */
 @InterfaceAudience.Private

@@ -147,6 +147,7 @@ public class ClusterUtil {
                 ? Integer.parseInt(configuration.get("hbase.master.start.timeout.localHBaseCluster", "30000"))
                 : 30000;
         waitForEvent(startTimeout, "active", () -> findActiveMaster(masters) != null);
+        LOG.debug("Active master found");
 
         if (regionservers != null) {
             for (RegionServerThread t : regionservers) {

@@ -8,18 +8,19 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.ipc.RpcClient;
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
 import org.apache.hadoop.hbase.util.DNS;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
 import org.junit.Test;
-import org.waterme7on.hbase.HBaseCommonTestingUtility;
-import org.waterme7on.hbase.Server;
+
 import org.waterme7on.hbase.ipc.RpcServer.BlockingServiceAndInterface;
 import org.waterme7on.hbase.regionserver.HRegionServer;
 import org.waterme7on.hbase.regionserver.SimpleRpcSchedulerFactory;
+import org.waterme7on.hbase.HBaseCommonTestingUtility;
+import org.waterme7on.hbase.Server;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
 
 import com.google.common.collect.ImmutableList;
 
@@ -64,18 +65,16 @@ public class TestNettyRpcServer {
 
         ServerName sn = ServerName.parseServerName("172.17.0.3" + ":" + port);
 
+        RpcClient rpcClient = new NettyRpcClient(conf);
+
         BlockingRpcChannel channel = rpcClient.createBlockingRpcChannel(sn, null, port);
-        // RegionServerStatusService.BlockingInterface rssStub =
-        // RegionServerStatusService.newBlockingStub(channel);
+        RegionServerStatusService.BlockingInterface rss = RegionServerStatusService.newBlockingStub(channel);
 
-        // RegionServerStatusService.BlockingInterface rss = rssStub;
-
-        // RegionServerStartupRequest.Builder request =
-        // RegionServerStartupRequest.newBuilder();
-        // request.setPort(port);
-        // request.setServerStartCode(77777777);
-        // request.setServerCurrentTime(EnvironmentEdgeManager.currentTime());
-        // rss.regionServerStartup(null, request.build());
+        RegionServerStartupRequest.Builder request = RegionServerStartupRequest.newBuilder();
+        request.setPort(port);
+        request.setServerStartCode(77777777);
+        request.setServerCurrentTime(EnvironmentEdgeManager.currentTime());
+        rss.regionServerStartup(null, request.build());
 
         System.out.println(channel);
         System.out.println(rpcClient);

@@ -34,8 +34,9 @@ public class RpcServerFactory {
                         Configuration conf, RpcScheduler scheduler, boolean reservoirEnabled) throws IOException {
                 String rpcServerClass = conf.get(CUSTOM_RPC_SERVER_IMPL_CONF_KEY, NettyRpcServer.class.getName());
                 return ReflectionUtils.instantiateWithCustomCtor(rpcServerClass,
-                                new Class[] { Server.class, String.class, InetSocketAddress.class,
+                                new Class[] { Server.class, String.class, List.class, InetSocketAddress.class,
                                                 Configuration.class, RpcScheduler.class, boolean.class },
-                                new Object[] { server, name, bindAddress, conf, scheduler, reservoirEnabled });
+                                new Object[] { server, name, services, bindAddress, conf, scheduler,
+                                                reservoirEnabled });
         }
 }

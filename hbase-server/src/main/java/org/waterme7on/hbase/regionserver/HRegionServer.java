@@ -13,8 +13,7 @@ import org.apache.hadoop.hbase.ipc.RpcClient;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionServerInfo;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.LockServiceProtos.LockService;
+import org.waterme7on.hbase.protobuf.generated.HBaseProtos.RegionServerInfo;
 import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
 import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
 import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
@@ -41,7 +40,7 @@ import org.waterme7on.hbase.master.HMaster;
 import org.waterme7on.hbase.master.MasterRpcServices;
 import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
 
-import com.google.protobuf.ServiceException;
+import org.apache.hbase.thirdparty.com.google.protobuf.ServiceException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -325,6 +324,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
             long lastMsg = EnvironmentEdgeManager.currentTime();
             while (!isStopped() && isHealthy()) {
                 LOG.debug("Running, Server status - " + this.rpcServices.getRpcServer().toString());
+                // LOG.debug(this.rpcServices.getServices().toString());
                 // the main run loop
                 long now = EnvironmentEdgeManager.currentTime();
                 if ((now - lastMsg) >= msgInterval) {
@@ -654,6 +654,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
      */
     protected void handleReportForDutyResponse(final RegionServerStartupResponse c) throws IOException {
         // Set our ephemeral znode up in zookeeper now we have a name.
+        LOG.debug("handleReportForDutyResponse: " + c.toString().replaceAll("[\r ]", ""));
         try {
             createMyEphemeralNode();
         } catch (Throwable e) {
@@ -728,9 +729,9 @@ public class HRegionServer extends Thread implements RegionServerServices {
         } else {
             LOG.error(msg, e);
         }
-        if (!rpcServices.checkOOME(t)) {
-            checkFileSystem();
-        }
+        // if (!rpcServices.checkOOME(t)) {
+        checkFileSystem();
+        // }
         return t;
     }
 }

@@ -62,6 +62,13 @@ Description:    Ubuntu 20.04.5 LTS
 Release:        20.04
 Codename:       focal
 
+Maven:
+Apache Maven 3.6.3
+Maven home: /usr/share/maven
+Java version: 1.8.0_352, vendor: Private Build, runtime: /usr/lib/jvm/java-8-openjdk-arm64/jre
+Default locale: en_US, platform encoding: ANSI_X3.4-1968
+OS name: "linux", version: "5.10.104-linuxkit", arch: "aarch64", family: "unix"
+
 ```
 
 ## Contribution

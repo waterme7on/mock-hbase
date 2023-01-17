@@ -3,13 +3,14 @@ syntax = "proto2";
 // This file contains protocol buffers that are used for RegionServerStatusProtocol.
 package hbase.pb;
 
-import "HBase.proto";
-
 option java_package = "org.waterme7on.hbase.protobuf.generated";
 option java_outer_classname = "RegionServerStatusProtos";
 option java_generic_services = true;
 option java_generate_equals_and_hash = true;
 option optimize_for = SPEED;
+
+import "HBase.proto";
+import "ClusterStatus.proto";
 
 message RegionServerStartupRequest {
   /** Port number this regionserver is up on */

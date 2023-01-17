@@ -2,6 +2,7 @@ package org.waterme7on.hbase.regionserver;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Abortable;
+import org.waterme7on.hbase.ipc.CallRunner;
 import org.waterme7on.hbase.ipc.RpcScheduler;
 
 public class SimpleRpcScheduler extends RpcScheduler {
@@ -30,5 +31,10 @@ public class SimpleRpcScheduler extends RpcScheduler {
     @Override
     public void stop() {
 
+    }
+
+    @Override
+    public boolean dispatch(CallRunner task) throws InterruptedException {
+        return false;
     }
 }
