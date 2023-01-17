@@ -129,7 +129,8 @@ public class NettyRpcServer extends RpcServer {
         if (started) {
             return;
         }
-        scheduler.start();
+        LOG.debug("NettyRpcServer start to run");
+        this.scheduler.start();
         started = true;
     };
 

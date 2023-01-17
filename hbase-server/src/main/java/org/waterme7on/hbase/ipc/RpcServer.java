@@ -31,6 +31,10 @@ public abstract class RpcServer implements RpcServerInterface, ConfigurationObse
     public static final String MAX_REQUEST_SIZE = "hbase.ipc.max.request.size";
     protected static final int DEFAULT_MAX_CALLQUEUE_SIZE = 1024 * 1024 * 1024;
     public static final int DEFAULT_MAX_REQUEST_SIZE = DEFAULT_MAX_CALLQUEUE_SIZE / 4; // 256M
+    /**
+     * How many calls/handler are allowed in the queue.
+     */
+    public static final int DEFAULT_MAX_CALLQUEUE_LENGTH_PER_HANDLER = 10;
 
     /* Attributes */
     /**

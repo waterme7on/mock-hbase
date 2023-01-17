@@ -128,7 +128,7 @@ public abstract class ServerRpcConnection implements Closeable {
      * Will be overridden in tests.
      */
     protected void processRequest(ByteBuff buf) throws IOException, InterruptedException {
-        LOG.debug("ServerRpcConnection.processRequest");
+        LOG.debug("ServerRpcConnection.processRequest (size:{})", buf.limit());
         long totalRequestSize = buf.limit();
         int offset = 0;
         // Here we read in the header. We avoid having pb
@@ -249,6 +249,7 @@ public abstract class ServerRpcConnection implements Closeable {
             }
             ServerCall<?> call = createCall(id, this.service, md, header, param, cellScanner,
                     totalRequestSize, this.addr, timeout, this.callCleanup);
+            LOG.debug("ServerRpcConnection.processRequest calling:" + call.toString());
 
             if (this.rpcServer.scheduler.dispatch(new CallRunner(this.rpcServer, call))) {
                 // unset span do that it's not closed in the finally block

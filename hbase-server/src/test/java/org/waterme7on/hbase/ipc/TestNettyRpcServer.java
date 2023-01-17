@@ -60,25 +60,29 @@ public class TestNettyRpcServer {
 
         Server rs = new TestServer();
 
-        RpcServer rpcServer = RpcServerFactory.createRpcServer(rs, "test", getServices(), bindAddress,
-                conf, rpcSchedulerFactory.create(conf, rs), false);
+        // RpcServer rpcServer = RpcServerFactory.createRpcServer(rs, "test",
+        // getServices(), bindAddress,
+        // conf, rpcSchedulerFactory.create(conf, rs), false);
 
-        ServerName sn = ServerName.parseServerName("172.17.0.3" + ":" + port);
+        // ServerName sn = ServerName.parseServerName("172.17.0.3" + ":" + port);
 
-        RpcClient rpcClient = new NettyRpcClient(conf);
+        // RpcClient rpcClient = new NettyRpcClient(conf);
 
-        BlockingRpcChannel channel = rpcClient.createBlockingRpcChannel(sn, null, port);
-        RegionServerStatusService.BlockingInterface rss = RegionServerStatusService.newBlockingStub(channel);
+        // BlockingRpcChannel channel = rpcClient.createBlockingRpcChannel(sn, null,
+        // port);
+        // RegionServerStatusService.BlockingInterface rss =
+        // RegionServerStatusService.newBlockingStub(channel);
 
-        RegionServerStartupRequest.Builder request = RegionServerStartupRequest.newBuilder();
-        request.setPort(port);
-        request.setServerStartCode(77777777);
-        request.setServerCurrentTime(EnvironmentEdgeManager.currentTime());
-        rss.regionServerStartup(null, request.build());
+        // RegionServerStartupRequest.Builder request =
+        // RegionServerStartupRequest.newBuilder();
+        // request.setPort(port);
+        // request.setServerStartCode(77777777);
+        // request.setServerCurrentTime(EnvironmentEdgeManager.currentTime());
+        // rss.regionServerStartup(null, request.build());
 
-        System.out.println(channel);
-        System.out.println(rpcClient);
-        System.out.println(rpcServer);
+        // System.out.println(channel);
+        // System.out.println(rpcClient);
+        // System.out.println(rpcServer);
 
     }
 

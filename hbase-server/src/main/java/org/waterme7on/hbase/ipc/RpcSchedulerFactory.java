@@ -11,6 +11,6 @@ public interface RpcSchedulerFactory {
     /**
      * Constructs a {@link RpcScheduler}.
      */
-    RpcScheduler create(Configuration conf, Abortable server);
+    RpcScheduler create(Configuration conf, PriorityFunction priority, Abortable server);
 
 }

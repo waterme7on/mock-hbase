@@ -3,6 +3,10 @@ package org.waterme7on.hbase.ipc;
 import java.net.InetSocketAddress;
 
 public abstract class RpcScheduler {
+    public static final String IPC_SERVER_MAX_CALLQUEUE_LENGTH = "hbase.ipc.server.max.callqueue.length";
+    public static final String IPC_SERVER_PRIORITY_MAX_CALLQUEUE_LENGTH = "hbase.ipc.server.priority.max.callqueue.length";
+    public static final String IPC_SERVER_REPLICATION_MAX_CALLQUEUE_LENGTH = "hbase.ipc.server.replication.max.callqueue.length";
+
     public static abstract class Context {
         public abstract InetSocketAddress getListenerAddress();
     }

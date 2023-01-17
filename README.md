@@ -34,6 +34,7 @@ run standalone zookeeper:
 docker pull zookeeper
 docker run --name hbase-zookeeper --restart always -d zookeeper
 # add zookeeper's ip to conf/hbase-site.xml
+# create 
 
 # zookeeper client (for test)
 docker run -it --rm --link hbase-zookeeper:zookeeper zookeeper zkCli.sh -server zookeeper

@@ -6,7 +6,11 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.io.ByteBuffAllocator;
 import org.apache.hadoop.hbase.net.Address;
 import org.apache.hadoop.hbase.security.User;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionInfo;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionSpecifier;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RPCProtos.RequestHeader;
 import org.apache.hadoop.hbase.util.DNS;
+import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 import org.apache.hbase.thirdparty.com.google.common.collect.ImmutableList;
 import org.apache.hbase.thirdparty.com.google.protobuf.RpcController;
 import org.apache.hbase.thirdparty.com.google.protobuf.ServiceException;
@@ -27,7 +31,7 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-public class RSRpcServices implements HBaseRPCErrorHandler {
+public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction {
     public static final String REGIONSERVER_ADMIN_SERVICE_CONFIG = "hbase.regionserver.admin.executorService";
     public static final String REGIONSERVER_CLIENT_SERVICE_CONFIG = "hbase.regionserver.client.executorService";
     public static final String REGIONSERVER_CLIENT_META_SERVICE_CONFIG = "hbase.regionserver.client.meta.executorService";
@@ -39,6 +43,8 @@ public class RSRpcServices implements HBaseRPCErrorHandler {
     protected final HRegionServer regionServer;
     // Server to handle client requests.
     final RpcServerInterface rpcServer;
+    // The reference to the priority extraction function
+    private final PriorityFunction priority;
     // The reference to the priority extraction function
 
     public RSRpcServices(final HRegionServer rs) throws IOException {
@@ -84,6 +90,7 @@ public class RSRpcServices implements HBaseRPCErrorHandler {
         // if (!(rs instanceof HMaster)) {
         // rpcServer.setNamedQueueRecorder(rs.getNamedQueueRecorder());
         // }
+        priority = createPriority();
 
         final InetSocketAddress address = rpcServer.getListenerAddress();
         if (address == null) {
@@ -137,7 +144,7 @@ public class RSRpcServices implements HBaseRPCErrorHandler {
                     // bindAddress
                     // for this
                     // server.
-                    conf, rpcSchedulerFactory.create(conf, (Abortable) server),
+                    conf, rpcSchedulerFactory.create(conf, this, (Abortable) server),
                     reservoirEnabled);
             return ret;
         } catch (BindException be) {
@@ -151,6 +158,10 @@ public class RSRpcServices implements HBaseRPCErrorHandler {
         final Configuration conf = regionServer.getConfiguration();
         return conf.getClass(REGION_SERVER_RPC_SCHEDULER_FACTORY_CLASS,
                 SimpleRpcSchedulerFactory.class);
+    }
+
+    void start(ZKWatcher zkWatcher) {
+        rpcServer.start();
     }
 
     void stop() {
@@ -173,5 +184,28 @@ public class RSRpcServices implements HBaseRPCErrorHandler {
     public boolean checkOOME(Throwable e) {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'checkOOME'");
+    }
+
+    public PriorityFunction getPriority() {
+        return priority;
+    }
+
+    @Override
+    public long getDeadline(RequestHeader header, Message param) {
+        return priority.getDeadline(header, param);
+    }
+
+    protected PriorityFunction createPriority() {
+        return new AnnotationReadingPriorityFunction(this);
+    }
+
+    public Region getRegion(RegionSpecifier specifier) {
+        // TODO
+        return null;
+    }
+
+    @Override
+    public int getPriority(RequestHeader header, Message param, User user) {
+        return priority.getPriority(header, param, user);
     }
 }

@@ -53,7 +53,6 @@ public class NettyServerRpcConnection extends ServerRpcConnection {
     }
 
     void process(final ByteBuf buf) throws IOException, InterruptedException {
-        LOG.debug("1");
         if (connectionHeaderRead) {
             this.callCleanup = () -> ReferenceCountUtil.safeRelease(buf);
             process(new SingleByteBuff(buf.nioBuffer()));
@@ -69,7 +68,6 @@ public class NettyServerRpcConnection extends ServerRpcConnection {
     }
 
     void process(ByteBuffer buf) throws IOException, InterruptedException {
-        LOG.debug("2");
         process(new SingleByteBuff(buf));
     }
 
@@ -96,7 +94,6 @@ public class NettyServerRpcConnection extends ServerRpcConnection {
     }
 
     void process(ByteBuff buf) throws IOException, InterruptedException {
-        LOG.debug("3");
         try {
             processOneRpc(buf);
         } catch (Exception e) {

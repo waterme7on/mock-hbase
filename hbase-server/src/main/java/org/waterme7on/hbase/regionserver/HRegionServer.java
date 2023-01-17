@@ -186,6 +186,8 @@ public class HRegionServer extends Thread implements RegionServerServices {
                 masterAddressTracker = null;
                 clusterStatusTracker = null;
             }
+
+            this.rpcServices.start(zooKeeper);
         } catch (Throwable t) {
             // Make sure we log the exception. HRegionServer is often started via reflection
             // and the
@@ -733,5 +735,9 @@ public class HRegionServer extends Thread implements RegionServerServices {
         checkFileSystem();
         // }
         return t;
+    }
+
+    public RSRpcServices getRSRpcServices() {
+        return this.rpcServices;
     }
 }
