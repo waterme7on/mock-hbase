@@ -1,0 +1,41 @@
+syntax = "proto2";
+
+// This file contains protocol buffers that are used for RegionServerStatusProtocol.
+package hbase.pb;
+
+import "HBase.proto";
+
+option java_package = "org.waterme7on.hbase.protobuf.generated";
+option java_outer_classname = "RegionServerStatusProtos";
+option java_generic_services = true;
+option java_generate_equals_and_hash = true;
+option optimize_for = SPEED;
+
+message RegionServerStartupRequest {
+  /** Port number this regionserver is up on */
+  required uint32 port = 1;
+
+  /** This servers' startcode */
+  required uint64 server_start_code = 2;
+
+  /** Current time of the region server in ms */
+  required uint64 server_current_time = 3;
+
+  /** hostname for region server, optional */
+  optional string use_this_hostname_instead = 4;
+}
+
+message RegionServerStartupResponse {
+  /**
+   * Configuration for the regionserver to use: e.g. filesystem,
+   * hbase rootdir, the hostname to use creating the RegionServer ServerName,
+   * etc
+   */
+  repeated NameStringPair map_entries = 1;
+}
+
+service RegionServerStatusService {
+    /** Called when a region server first starts. */
+    rpc RegionServerStartup(RegionServerStartupRequest)
+        returns(RegionServerStartupResponse);
+}

@@ -1,9 +1,9 @@
 package org.waterme7on.hbase.ipc;
 
-import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelOutboundHandlerAdapter;
-import io.netty.channel.ChannelPromise;
+import org.apache.hbase.thirdparty.io.netty.buffer.Unpooled;
+import org.apache.hbase.thirdparty.io.netty.channel.ChannelHandlerContext;
+import org.apache.hbase.thirdparty.io.netty.channel.ChannelOutboundHandlerAdapter;
+import org.apache.hbase.thirdparty.io.netty.channel.ChannelPromise;
 
 public class NettyRpcServerResponseEncoder extends ChannelOutboundHandlerAdapter {
     @Override

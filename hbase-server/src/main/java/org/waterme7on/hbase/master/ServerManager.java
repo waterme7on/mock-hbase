@@ -12,7 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.hadoop.hbase.ServerMetrics;
 import org.apache.hadoop.hbase.ServerMetricsBuilder;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

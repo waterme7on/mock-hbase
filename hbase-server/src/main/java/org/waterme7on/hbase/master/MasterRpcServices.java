@@ -21,7 +21,6 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.NameStringPair;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GetUserPermissionsRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GetUserPermissionsResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GrantRequest;
@@ -34,7 +33,6 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Coprocesso
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.LogEntry;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.LogRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.VersionInfo;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.LockServiceProtos.LockHeartbeatRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.LockServiceProtos.LockHeartbeatResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.LockServiceProtos.LockRequest;
@@ -45,23 +43,10 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetQuotaSta
 import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetQuotaStatesResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetSpaceQuotaRegionSizesRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetSpaceQuotaRegionSizesResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.FileArchiveNotificationRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.FileArchiveNotificationResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerReportRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerReportResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionSpaceUseReportRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionSpaceUseReportResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportProcedureDoneRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportProcedureDoneResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportRegionStateTransitionRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportRegionStateTransitionResponse;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
+import org.waterme7on.hbase.protobuf.generated.HBaseProtos.NameStringPair;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.AddReplicationPeerRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.AddReplicationPeerResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.DisableReplicationPeerRequest;
@@ -97,6 +82,7 @@ public class MasterRpcServices extends RSRpcServices
             final RpcSchedulerFactory rpcSchedulerFactory, final InetSocketAddress bindAddress,
             final String name) throws IOException {
         final Configuration conf = regionServer.getConfiguration();
+        LOG.info("Starting Master RPC server on " + bindAddress);
         // RpcServer at HM by default enable ByteBufferPool iff HM having user table
         // region in it
         // boolean reservoirEnabled =
@@ -117,9 +103,6 @@ public class MasterRpcServices extends RSRpcServices
 
     protected List<BlockingServiceAndInterface> getServices() {
         List<BlockingServiceAndInterface> bssi = new ArrayList<>(5);
-        // bssi.add(new
-        // BlockingServiceAndInterface(MasterService.newReflectiveBlockingService(this),
-        // MasterService.BlockingInterface.class));
         bssi.addAll(super.getServices());
         return bssi;
     }
@@ -189,256 +172,6 @@ public class MasterRpcServices extends RSRpcServices
         } catch (IOException ioe) {
             throw new ServiceException(ioe);
         }
-    }
-
-    @Override
-    public RegionServerReportResponse regionServerReport(RpcController controller, RegionServerReportRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public ReportRSFatalErrorResponse reportRSFatalError(RpcController controller, ReportRSFatalErrorRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public GetLastFlushedSequenceIdResponse getLastFlushedSequenceId(RpcController controller,
-            GetLastFlushedSequenceIdRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public ReportRegionStateTransitionResponse reportRegionStateTransition(RpcController controller,
-            ReportRegionStateTransitionRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public RegionSpaceUseReportResponse reportRegionSpaceUse(RpcController controller,
-            RegionSpaceUseReportRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public ReportProcedureDoneResponse reportProcedureDone(RpcController controller, ReportProcedureDoneRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public FileArchiveNotificationResponse reportFileArchival(RpcController controller,
-            FileArchiveNotificationRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public GetSchemaAlterStatusResponse getSchemaAlterStatus(RpcController controller,
-            GetSchemaAlterStatusRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public GetTableDescriptorsResponse getTableDescriptors(RpcController controller, GetTableDescriptorsRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public GetTableNamesResponse getTableNames(RpcController controller, GetTableNamesRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public GetClusterStatusResponse getClusterStatus(RpcController controller, GetClusterStatusRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public IsMasterRunningResponse isMasterRunning(RpcController controller, IsMasterRunningRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public AddColumnResponse addColumn(RpcController controller, AddColumnRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public DeleteColumnResponse deleteColumn(RpcController controller, DeleteColumnRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public AssignRegionResponse assignRegion(RpcController controller, AssignRegionRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public DeleteTableResponse deleteTable(RpcController controller, DeleteTableRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public EnableTableResponse enableTable(RpcController controller, EnableTableRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public DisableTableResponse disableTable(RpcController controller, DisableTableRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public CreateTableResponse createTable(RpcController controller, CreateTableRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public IsInMaintenanceModeResponse isMasterInMaintenanceMode(RpcController controller,
-            IsInMaintenanceModeRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public BalanceResponse balance(RpcController controller, BalanceRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public IsBalancerEnabledResponse isBalancerEnabled(RpcController controller, IsBalancerEnabledRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public IsNormalizerEnabledResponse isNormalizerEnabled(RpcController controller, IsNormalizerEnabledRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public EnableCatalogJanitorResponse enableCatalogJanitor(RpcController controller,
-            EnableCatalogJanitorRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public IsCatalogJanitorEnabledResponse isCatalogJanitorEnabled(RpcController controller,
-            IsCatalogJanitorEnabledRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public IsCleanerChoreEnabledResponse isCleanerChoreEnabled(RpcController controller,
-            IsCleanerChoreEnabledRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public CoprocessorServiceResponse execMasterService(RpcController controller, CoprocessorServiceRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public GetCompletedSnapshotsResponse getCompletedSnapshots(RpcController controller,
-            GetCompletedSnapshotsRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public DeleteSnapshotResponse deleteSnapshot(RpcController controller, DeleteSnapshotRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public ExecProcedureResponse execProcedure(RpcController controller, ExecProcedureRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public ExecProcedureResponse execProcedureWithRet(RpcController controller, ExecProcedureRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public IsProcedureDoneResponse isProcedureDone(RpcController controller, IsProcedureDoneRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public CreateNamespaceResponse createNamespace(RpcController controller, CreateNamespaceRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public DeleteNamespaceResponse deleteNamespace(RpcController controller, DeleteNamespaceRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public GetNamespaceDescriptorResponse getNamespaceDescriptor(RpcController controller,
-            GetNamespaceDescriptorRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public GetTableStateResponse getTableState(RpcController controller, GetTableStateRequest request)
-            throws ServiceException {
-        // TODO Auto-generated method stub
-        return null;
     }
 
     @Override
@@ -846,6 +579,207 @@ public class MasterRpcServices extends RSRpcServices
 
     @Override
     public FlushMasterStoreResponse flushMasterStore(RpcController controller, FlushMasterStoreRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public AddColumnResponse addColumn(RpcController controller, AddColumnRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public AssignRegionResponse assignRegion(RpcController controller, AssignRegionRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public BalanceResponse balance(RpcController controller, BalanceRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public CreateNamespaceResponse createNamespace(RpcController controller, CreateNamespaceRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public CreateTableResponse createTable(RpcController controller, CreateTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public DeleteColumnResponse deleteColumn(RpcController controller, DeleteColumnRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public DeleteNamespaceResponse deleteNamespace(RpcController controller, DeleteNamespaceRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public DeleteSnapshotResponse deleteSnapshot(RpcController controller, DeleteSnapshotRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public DeleteTableResponse deleteTable(RpcController controller, DeleteTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public DisableTableResponse disableTable(RpcController controller, DisableTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public EnableCatalogJanitorResponse enableCatalogJanitor(RpcController controller,
+            EnableCatalogJanitorRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public EnableTableResponse enableTable(RpcController controller, EnableTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public CoprocessorServiceResponse execMasterService(RpcController controller, CoprocessorServiceRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ExecProcedureResponse execProcedure(RpcController controller, ExecProcedureRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ExecProcedureResponse execProcedureWithRet(RpcController controller, ExecProcedureRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetClusterStatusResponse getClusterStatus(RpcController controller, GetClusterStatusRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetCompletedSnapshotsResponse getCompletedSnapshots(RpcController controller,
+            GetCompletedSnapshotsRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetNamespaceDescriptorResponse getNamespaceDescriptor(RpcController controller,
+            GetNamespaceDescriptorRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetSchemaAlterStatusResponse getSchemaAlterStatus(RpcController controller,
+            GetSchemaAlterStatusRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetTableDescriptorsResponse getTableDescriptors(RpcController controller, GetTableDescriptorsRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetTableNamesResponse getTableNames(RpcController controller, GetTableNamesRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetTableStateResponse getTableState(RpcController controller, GetTableStateRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public IsBalancerEnabledResponse isBalancerEnabled(RpcController controller, IsBalancerEnabledRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public IsCatalogJanitorEnabledResponse isCatalogJanitorEnabled(RpcController controller,
+            IsCatalogJanitorEnabledRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public IsCleanerChoreEnabledResponse isCleanerChoreEnabled(RpcController controller,
+            IsCleanerChoreEnabledRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public IsInMaintenanceModeResponse isMasterInMaintenanceMode(RpcController controller,
+            IsInMaintenanceModeRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public IsMasterRunningResponse isMasterRunning(RpcController controller, IsMasterRunningRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public IsNormalizerEnabledResponse isNormalizerEnabled(RpcController controller, IsNormalizerEnabledRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public IsProcedureDoneResponse isProcedureDone(RpcController controller, IsProcedureDoneRequest request)
             throws ServiceException {
         // TODO Auto-generated method stub
         return null;

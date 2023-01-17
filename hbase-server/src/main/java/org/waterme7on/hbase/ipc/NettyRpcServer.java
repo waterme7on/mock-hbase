@@ -9,14 +9,14 @@ import java.util.concurrent.CountDownLatch;
 
 import org.slf4j.Logger;
 
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.buffer.ByteBufAllocator;
+import org.apache.hbase.thirdparty.io.netty.bootstrap.ServerBootstrap;
+import org.apache.hbase.thirdparty.io.netty.buffer.ByteBufAllocator;
 import org.apache.hadoop.hbase.util.ReflectionUtils;
-import io.netty.channel.*;
-import io.netty.channel.group.ChannelGroup;
-import io.netty.channel.group.DefaultChannelGroup;
-import io.netty.handler.codec.FixedLengthFrameDecoder;
-import io.netty.util.concurrent.GlobalEventExecutor;
+import org.apache.hbase.thirdparty.io.netty.channel.*;
+import org.apache.hbase.thirdparty.io.netty.channel.group.ChannelGroup;
+import org.apache.hbase.thirdparty.io.netty.channel.group.DefaultChannelGroup;
+import org.apache.hbase.thirdparty.io.netty.handler.codec.FixedLengthFrameDecoder;
+import org.apache.hbase.thirdparty.io.netty.util.concurrent.GlobalEventExecutor;
 
 import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
@@ -84,9 +84,7 @@ public class NettyRpcServer extends RpcServer {
                         // pipeline.addLast("preambleDecoder", preambleDecoder);
                         // pipeline.addLast("preambleHandler", createNettyRpcServerPreambleHandler());
                         // pipeline.addLast("frameDecoder", new NettyRpcFrameDecoder(maxRequestSize));
-                        LOG.debug(name + " adding NettyRpcServerHandler");
                         pipeline.addLast("decoder", new NettyRpcServerRequestDecoder(allChannels));
-                        LOG.debug(name + " adding NettyRpcServerHandler");
                         pipeline.addLast("encoder", new NettyRpcServerResponseEncoder());
                     }
                 });
@@ -158,7 +156,8 @@ public class NettyRpcServer extends RpcServer {
 
     @Override
     public String toString() {
-        return null;
+        return "[" + this.getClass().getSimpleName() + ":" + getListenerAddress() + "(Connections Number:"
+                + allChannels.size() + ")]";
     }
 
     // protected NettyRpcServerPreambleHandler createNettyRpcServerPreambleHandler()

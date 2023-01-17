@@ -138,8 +138,7 @@ class NettyRpcConnection extends RpcConnection {
                 .addBefore(BufferCallBeforeInitHandler.NAME, null,
                         new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, 4))
                 .addBefore(BufferCallBeforeInitHandler.NAME, null,
-                        new NettyRpcDuplexHandler(this, rpcClient.cellBlockBuilder, codec, compressor))
-                .fireUserEventTriggered(BufferCallEvent.success());
+                        new NettyRpcDuplexHandler(this, rpcClient.cellBlockBuilder, codec, compressor));
     }
 
     private boolean reloginInProgress;
@@ -153,7 +152,7 @@ class NettyRpcConnection extends RpcConnection {
 
     private void connect() throws UnknownHostException {
         assert eventLoop.inEventLoop();
-        LOG.trace("Connecting to {}", remoteId.getAddress());
+        LOG.debug("Connecting to {}", remoteId.getAddress());
         InetSocketAddress remoteAddr = getRemoteInetAddress(rpcClient.metrics);
         this.channel = new Bootstrap().group(eventLoop).channel(rpcClient.channelClass)
                 .option(ChannelOption.TCP_NODELAY, rpcClient.isTcpNoDelay())
@@ -182,12 +181,15 @@ class NettyRpcConnection extends RpcConnection {
                             // future.cause());
                             return;
                         }
-                        NettyFutureUtils.safeWriteAndFlush(ch, connectionHeaderPreamble.retainedDuplicate());
+                        // NettyFutureUtils.safeWriteAndFlush(ch,
+                        // connectionHeaderPreamble.retainedDuplicate());
                         // send the connection header to server
                         NettyFutureUtils.safeWrite(ch, connectionHeaderWithLength.retainedDuplicate());
                         established(ch);
                     }
-                }).channel();
+                })
+                .channel();
+        LOG.debug("Connection to {} established, {}", remoteId.getAddress(), this.channel);
     }
 
     private void sendRequest0(Call call, HBaseRpcController hrc) throws IOException {
@@ -196,7 +198,6 @@ class NettyRpcConnection extends RpcConnection {
             throw new IOException("Can not send request because relogin is in progress.");
         }
         hrc.notifyOnCancel(new RpcCallback<Object>() {
-
             @Override
             public void run(Object parameter) {
                 setCancelled(call);
@@ -212,6 +213,7 @@ class NettyRpcConnection extends RpcConnection {
                     setCancelled(call);
                 } else {
                     if (channel == null) {
+                        LOG.debug("(sendRequest0)channel is null, create new connection");
                         connect();
                     }
                     scheduleTimeoutTask(call);
@@ -235,6 +237,7 @@ class NettyRpcConnection extends RpcConnection {
 
     @Override
     public void sendRequest(final Call call, HBaseRpcController hrc) {
+        LOG.debug("Sending request {} to {}", call, remoteId.getAddress());
         execute(eventLoop, () -> {
             try {
                 sendRequest0(call, hrc);

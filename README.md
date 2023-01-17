@@ -46,6 +46,7 @@ menu:
 - Run tests: `mvn test`
 - Run main processes: `java -jar hbase-server/target/hbase-server-1.0.jar`
 - Run with debug: `java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug -jar hbase-server/target/hbase-server-1.0.jar`
+- Unit tests: ``
 
 ## Dev Environment
 

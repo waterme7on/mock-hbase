@@ -19,9 +19,11 @@ package org.waterme7on.hbase.ipc;
  */
 import org.apache.yetus.audience.InterfaceAudience;
 
-import io.netty.buffer.AbstractByteBufAllocator;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
+import org.apache.hbase.thirdparty.io.netty.buffer.AbstractByteBufAllocator;
+import org.apache.hbase.thirdparty.io.netty.buffer.ByteBuf;
+import org.apache.hbase.thirdparty.io.netty.buffer.PooledByteBufAllocator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A pooled ByteBufAllocator that does not prefer direct buffers regardless of
@@ -36,6 +38,8 @@ import io.netty.buffer.PooledByteBufAllocator;
 @InterfaceAudience.Private
 public class HeapByteBufAllocator extends AbstractByteBufAllocator {
 
+    public static final Logger LOG = LoggerFactory.getLogger(HeapByteBufAllocator.class);
+
     public static final HeapByteBufAllocator DEFAULT = new HeapByteBufAllocator();
 
     private final PooledByteBufAllocator delegate = new PooledByteBufAllocator(false /* preferDirect */);
@@ -47,11 +51,13 @@ public class HeapByteBufAllocator extends AbstractByteBufAllocator {
 
     @Override
     protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
+        LOG.debug("newHeapBuffer({}, {})", initialCapacity, maxCapacity);
         return delegate.heapBuffer(initialCapacity, maxCapacity);
     }
 
     @Override
     protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
+        LOG.debug("newDirectBuffer({}, {})", initialCapacity, maxCapacity);
         return delegate.directBuffer(initialCapacity, maxCapacity);
     }
 

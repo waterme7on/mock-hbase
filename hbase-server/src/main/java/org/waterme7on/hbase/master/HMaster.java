@@ -11,7 +11,7 @@ import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.log.HBaseMarkers;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionServerInfo;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService.BlockingInterface;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService.BlockingInterface;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Addressing;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
@@ -275,7 +275,7 @@ public class HMaster extends HRegionServer implements MasterServices {
         setInitialized(true);
 
         // TODO...
-        LOG.debug("Master finish ActiveMasterInitialization and become active");
+        LOG.info("Master finish ActiveMasterInitialization and become active");
     }
 
     private void initializeZKBasedSystemTrackers()
@@ -285,7 +285,6 @@ public class HMaster extends HRegionServer implements MasterServices {
 
         // Set the cluster as up. If new RSs, they'll be waiting on this before
         // going ahead with their startup.
-        LOG.debug(this.clusterStatusTracker.getNode());
         boolean wasUp = this.clusterStatusTracker.isClusterUp();
         if (!wasUp) {
             this.clusterStatusTracker.setClusterUp();
@@ -386,6 +385,13 @@ public class HMaster extends HRegionServer implements MasterServices {
 
     public MasterRpcServices getMasterRpcServices() {
         return (MasterRpcServices) rpcServices;
+    }
+
+    /**
+     * @return true if this is the active master, for testing only
+     */
+    public boolean isActiveMaster() {
+        return activeMaster;
     }
 
     public void stopMaster() throws IOException {

@@ -17,7 +17,10 @@ import io.opentelemetry.context.Scope;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.ParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.HBaseCluster;
 import org.waterme7on.hbase.ServerCommandLine;
+import org.waterme7on.hbase.regionserver.HRegionServer;
+import org.waterme7on.hbase.util.ClusterUtil;
 
 import java.io.IOException;
 import java.util.List;
@@ -33,16 +36,27 @@ public class HMasterCommandLine extends ServerCommandLine {
 
         final Span span = TraceUtil.createSpan("HMasterCommandLine.startMaster");
         try (Scope ignored = span.makeCurrent()) {
-            logProcessInfo(conf);
-            HMaster master = HMaster.constructMaster(masterClass, conf);
-            if (master.isStopped()) {
-                LOG.info("Won't bring the Master up as a shutdown is requested");
-                return 1;
-            }
-            master.start();
-            master.join();
-            if (master.isAborted()) {
-                throw new RuntimeException("HMaster Aborted");
+            if (HBaseCluster.isLocal(conf)) {
+                LOG.debug("Running in local mode");
+                logProcessInfo(conf);
+                // Need to have the zk cluster shutdown when master is shutdown.
+                // Run a subclass that does the zk cluster shutdown on its way out.
+                int regionServersCount = conf.getInt("hbase.regionservers", 1);
+                HBaseCluster cluster = new HBaseCluster(conf, regionServersCount);
+                cluster.startup();
+                waitOnMasterThreads(cluster);
+                // HMaster master = HMaster.constructMaster(masterClass, conf);
+                // if (master.isStopped()) {
+                // LOG.info("Won't bring the Master up as a shutdown is requested");
+                // return 1;
+                // }
+                // master.start();
+                // master.join();
+                // if (master.isAborted()) {
+                // throw new RuntimeException("HMaster Aborted");
+                // }
+            } else {
+                LOG.debug("Running in distributed mode (unsupported yet)");
             }
             span.setStatus(StatusCode.OK);
         } catch (Throwable t) {
@@ -84,6 +98,27 @@ public class HMasterCommandLine extends ServerCommandLine {
 
     public HMasterCommandLine(Class<? extends HMaster> masterClass) {
         this.masterClass = masterClass;
+    }
+
+    private void waitOnMasterThreads(HBaseCluster cluster) throws InterruptedException {
+        List<ClusterUtil.MasterThread> masters = cluster.getMasters();
+        List<ClusterUtil.RegionServerThread> regionservers = cluster.getRegionServers();
+
+        if (masters != null) {
+            for (ClusterUtil.MasterThread t : masters) {
+                t.join();
+                if (t.getMaster().isAborted()) {
+                    closeAllRegionServerThreads(regionservers);
+                    throw new RuntimeException("HMaster Aborted");
+                }
+            }
+        }
+    }
+
+    private static void closeAllRegionServerThreads(List<ClusterUtil.RegionServerThread> regionservers) {
+        for (ClusterUtil.RegionServerThread t : regionservers) {
+            t.getRegionServer().stop("HMaster Aborted; Bringing down regions servers");
+        }
     }
 
     @Override
@@ -134,14 +169,14 @@ public class HMasterCommandLine extends ServerCommandLine {
         if ("start".equals(command)) {
             return startMaster();
         } else if ("stop".equals(command)) {
-            if (shutDownCluster) {
-                return stopMaster();
-            }
-            System.err.println("To shutdown the master run "
-                    + "hbase-daemon.sh stop master or send a kill signal to the HMaster pid, "
-                    + "and to stop HBase Cluster run \"stop-hbase.sh\" or \"hbase master "
-                    + "stop --shutDownCluster\"");
-            return 1;
+            // if (shutDownCluster) {
+            return stopMaster();
+            // }
+            // System.err.println("To shutdown the master run "
+            // + "hbase-daemon.sh stop master or send a kill signal to the HMaster pid, "
+            // + "and to stop HBase Cluster run \"stop-hbase.sh\" or \"hbase master "
+            // + "stop --shutDownCluster\"");
+            // return 1;
             // } else if ("clear".equals(command)) {
             // return (ZNodeClearer.clear(getConf()) ? 0 : 1);
         } else {

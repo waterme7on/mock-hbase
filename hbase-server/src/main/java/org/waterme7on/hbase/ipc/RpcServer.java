@@ -3,6 +3,8 @@ package org.waterme7on.hbase.ipc;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Optional;
+
 import org.apache.hadoop.conf.Configuration;
 import org.waterme7on.hbase.Server;
 import org.waterme7on.hbase.regionserver.RSRpcServices;
@@ -92,4 +94,48 @@ public abstract class RpcServer implements RpcServerInterface {
         }
         return null;
     }
+
+    @FunctionalInterface
+    protected interface CallCleanup {
+        void run();
+    }
+
+    /**
+     * Used by
+     * {@link org.apache.hadoop.hbase.procedure2.store.region.RegionProcedureStore}.
+     * For
+     * master's rpc call, it may generate new procedure and mutate the region which
+     * store procedure.
+     * There are some check about rpc when mutate region, such as rpc timeout check.
+     * So unset the rpc
+     * call to avoid the rpc check.
+     * 
+     * @return the currently ongoing rpc call
+     */
+    public static Optional<RpcCall> unsetCurrentCall() {
+        Optional<RpcCall> rpcCall = getCurrentCall();
+        CurCall.set(null);
+        return rpcCall;
+    }
+
+    /**
+     * Set the rpc call back after mutate region.
+     */
+    public static void setCurrentCall(RpcCall rpcCall) {
+        CurCall.set(rpcCall);
+    }
+
+    /**
+     * Needed for features such as delayed calls. We need to be able to store the
+     * current call so that
+     * we can complete it later or ask questions of what is supported by the current
+     * ongoing call.
+     * 
+     * @return An RpcCallContext backed by the currently ongoing call (gotten from a
+     *         thread local)
+     */
+    public static Optional<RpcCall> getCurrentCall() {
+        return Optional.ofNullable(CurCall.get());
+    }
+
 }

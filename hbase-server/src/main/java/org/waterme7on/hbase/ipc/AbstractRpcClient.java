@@ -422,6 +422,7 @@ public abstract class AbstractRpcClient<T extends RpcConnection> implements RpcC
     private Call callMethod(final Descriptors.MethodDescriptor md, final HBaseRpcController hrc,
             final Message param, Message returnType, final User ticket, final Address addr,
             final RpcCallback<Message> callback) {
+        LOG.debug("(callMethod) Call: {}, param: {}, addr: {}", md.getName(), param, addr);
         Span span = new IpcClientSpanBuilder().setMethodDescriptor(md).setRemoteAddress(addr).build();
         try (Scope scope = span.makeCurrent()) {
             final MetricsConnection.CallStats cs = MetricsConnection.newCallStats();
@@ -463,6 +464,9 @@ public abstract class AbstractRpcClient<T extends RpcConnection> implements RpcC
                 }
                 cs.setConcurrentCallsPerServer(count);
                 T connection = getConnection(remoteId);
+                LOG.debug("(callMethod) Call: {}", call.toString());
+                LOG.debug("(callMethod) Connection: {}, {}", connection.toString(),
+                        connection.getClass());
                 connection.sendRequest(call, hrc);
             } catch (Exception e) {
                 call.setException(toIOException(e));
@@ -623,11 +627,14 @@ public abstract class AbstractRpcClient<T extends RpcConnection> implements RpcC
         protected BlockingRpcChannelImplementation(AbstractRpcClient<?> rpcClient, Address addr,
                 User ticket, int rpcTimeout) {
             super(rpcClient, addr, ticket, rpcTimeout);
+            LOG.debug("construct BlockingRpcCHannel with " + addr + " with ticket " + ticket);
         }
 
         @Override
         public Message callBlockingMethod(Descriptors.MethodDescriptor md, RpcController controller,
                 Message param, Message returnType) throws ServiceException {
+            LOG.debug("(callBlockingMethod) Method: {}, param: {}, returnType: {}", md.getName(),
+                    param, returnType);
             return rpcClient.callBlockingMethod(md, configureRpcController(controller), param, returnType,
                     ticket, addr);
         }

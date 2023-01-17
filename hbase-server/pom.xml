@@ -3,7 +3,6 @@
          xmlns="http://maven.apache.org/POM/4.0.0"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>org.waterme7on.hbase</groupId>
         <artifactId>mock-hbase</artifactId>
@@ -54,6 +53,11 @@
             <version>4.1.52.Final</version>
             <!-- <classifier>linux-aarch64</classifier> -->
         </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>3.21.12</version>
+        </dependency>
         <!-- https://mvnrepository.com/artifact/io.netty/netty-transport-native-epoll -->
         <dependency>
             <groupId>io.netty</groupId>
@@ -101,12 +105,79 @@
         </dependency>
     </dependencies>
     <properties>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <!--Version of protobuf that hbase uses internally (we shade our pb)
+            Must match what is out in hbase-thirdparty include.
+        -->
+        <internal.protobuf.version>3.21.7</internal.protobuf.version>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <build>
         <plugins>
+            <!-- <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.0</version>
+                <configuration>
+                    <source>1.8</source>
+                    <target>1.8</target>
+                </configuration>
+            </plugin> -->
+            <plugin>
+        <groupId>com.google.code.maven-replacer-plugin</groupId>
+        <artifactId>replacer</artifactId>
+        <version>1.5.3</version>
+        <configuration>
+          <basedir>${basedir}/target/generated-sources/</basedir>
+          <includes>
+            <include>**/*.java</include>
+          </includes>
+          <!-- Ignore errors when missing files, because it means this build
+                 was run with -Dprotoc.skip and there is no -Dreplacer.skip -->
+          <ignoreErrors>true</ignoreErrors>
+          <replacements>
+            <replacement>
+              <token>([^\.])com.google.protobuf</token>
+              <value>$1org.apache.hbase.thirdparty.com.google.protobuf</value>
+            </replacement>
+            <replacement>
+              <token>(public)(\W+static)?(\W+final)?(\W+class)</token>
+              <value>@javax.annotation.Generated("proto") $1$2$3$4</value>
+            </replacement>
+            <!-- replacer doesn't support anchoring or negative lookbehind -->
+            <replacement>
+              <token>(@javax.annotation.Generated\("proto"\) ){2}</token>
+              <value>$1</value>
+            </replacement>
+          </replacements>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>replace</goal>
+            </goals>
+            <phase>process-sources</phase>
+          </execution>
+        </executions>
+      </plugin>
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>0.6.1</version>
+                <configuration>
+                    <useArgumentFile>true</useArgumentFile>
+                    <protocExecutable>/usr/local/bin/protoc</protocExecutable>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>

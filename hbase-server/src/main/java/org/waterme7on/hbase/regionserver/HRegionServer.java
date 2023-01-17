@@ -8,16 +8,16 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.NotServingRegionException;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.client.ClusterConnection;
+import org.waterme7on.hbase.client.ClusterConnection;
 import org.apache.hadoop.hbase.ipc.RpcClient;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionServerInfo;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.LockServiceProtos.LockService;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
-import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
+import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
@@ -34,9 +34,11 @@ import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
 import org.apache.zookeeper.KeeperException;
 import org.apache.commons.lang3.StringUtils;
+import org.waterme7on.hbase.client.ServerConnectionUtils;
 import org.waterme7on.hbase.fs.HFileSystem;
 import org.waterme7on.hbase.ipc.RpcClientFactory;
 import org.waterme7on.hbase.master.HMaster;
+import org.waterme7on.hbase.master.MasterRpcServices;
 import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
 
 import com.google.protobuf.ServiceException;
@@ -89,7 +91,6 @@ public class HRegionServer extends Thread implements RegionServerServices {
 
     // Stub to do region server status calls against the master.
     private volatile RegionServerStatusService.BlockingInterface rssStub;
-    private volatile LockService.BlockingInterface lockStub;
     // RPC client. Used to make the stub above that does region server status
     // checking.
     private RpcClient rpcClient;
@@ -274,7 +275,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
 
     @Override
     public void run() {
-        LOG.debug("HRegionServer running");
+        LOG.info("HRegionServer running");
         if (isStopped()) {
             LOG.info("Skipping run; stopped");
             return;
@@ -322,9 +323,8 @@ public class HRegionServer extends Thread implements RegionServerServices {
             // TODO: main run loop
             // We registered with the Master. Go into run mode.
             long lastMsg = EnvironmentEdgeManager.currentTime();
-            long oldRequestCount = -1;
             while (!isStopped() && isHealthy()) {
-                LOG.debug("running...");
+                LOG.debug("Running, Server status - " + this.rpcServices.getRpcServer().toString());
                 // the main run loop
                 long now = EnvironmentEdgeManager.currentTime();
                 if ((now - lastMsg) >= msgInterval) {
@@ -459,7 +459,19 @@ public class HRegionServer extends Thread implements RegionServerServices {
      * Setup our cluster connection if not already initialized.
      */
     protected synchronized void setupClusterConnection() throws IOException {
-        return;
+        if (clusterConnection == null) {
+            clusterConnection = createClusterConnection();
+        }
+    }
+
+    protected ClusterConnection createClusterConnection() throws IOException {
+        // Create a cluster connection that when appropriate, can short-circuit and go
+        // directly to the
+        // local server if the request is to the local server bypassing RPC. Can be used
+        // for both local
+        // and remote invocations.
+        return ServerConnectionUtils.createShortCircuitConnection(conf, null,
+                serverName, rpcServices, rpcServices, null);
     }
 
     /*
@@ -536,6 +548,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
             request.setPort(port);
             request.setServerStartCode(this.startcode);
             request.setServerCurrentTime(now);
+            LOG.debug("Report request: \n" + request.toString().replaceAll("[\r ]", ""));
             result = rss.regionServerStartup(null, request.build());
         } catch (Exception e) {
             LOG.debug("Error talking to master", e);
@@ -562,12 +575,11 @@ public class HRegionServer extends Thread implements RegionServerServices {
         ServerName sn = null;
         long previousLogTime = 0;
         RegionServerStatusService.BlockingInterface intRssStub = null;
-        LockService.BlockingInterface intLockStub = null;
         boolean interrupted = false;
         try {
             while (keepLooping()) {
                 sn = this.masterAddressTracker.getMasterAddress(refresh);
-                LOG.debug("createRegionServerStatusStub: sn=" + sn + ", refresh=" + refresh);
+                LOG.debug("createRegionServerStatusStub: master servername=" + sn + ", refresh=" + refresh);
                 if (sn == null) {
                     if (!keepLooping()) {
                         // give up with no connection.
@@ -588,15 +600,16 @@ public class HRegionServer extends Thread implements RegionServerServices {
                 // If we are on the active master, use the shortcut
                 if (this instanceof HMaster && sn.equals(getServerName())) {
                     intRssStub = ((HMaster) this).getMasterRpcServices();
-                    intLockStub = ((HMaster) this).getMasterRpcServices();
                     LOG.debug("this server is the master, using shortcut");
                     break;
                 }
+                // If we are not the active master, then create using the RPC client
                 try {
                     BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(sn,
                             User.getCurrent(), shortOperationTimeout);
+                    LOG.debug(channel.toString());
+                    LOG.debug(this.rpcClient.toString() + "," + this.rpcClient.getClass().getName());
                     intRssStub = RegionServerStatusService.newBlockingStub(channel);
-                    intLockStub = LockService.newBlockingStub(channel);
                     break;
                 } catch (IOException e) {
                     if (EnvironmentEdgeManager.currentTime() > (previousLogTime + 1000)) {
@@ -619,8 +632,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
             }
         }
         this.rssStub = intRssStub;
-        this.lockStub = intLockStub;
-        LOG.debug(intRssStub + " - " + intLockStub);
+        LOG.debug("rssStub:" + intRssStub);
         return sn;
     }
 
