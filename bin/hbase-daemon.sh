@@ -6,7 +6,20 @@ bin=`cd "$bin">/dev/null; pwd`
 . "$bin"/config.sh
 . "$bin"/common.sh
 
-usage="Usage: hbase-daemon.sh  (start|stop) <hbase-command> <args...>"
+
+show_usage() {
+  echo "Usage: hbase-daemon.sh  (start|stop) <hbase-command> <args...>"
+  echo "  hbase-commands:"
+  echo "    master"
+  echo "  args:"
+  echo "    null"
+}
+
+if [ "--help" = "$1" ] || [ "-h" = "$1" ]; then
+  show_usage
+  exit 0
+fi
+
 
 # get arguments
 startStop=$1
@@ -14,6 +27,13 @@ shift
 
 command=$1
 shift
+
+# if no args specified, show usage
+if [ ! -n "$command" ]; then
+  show_usage
+  exit 1
+fi
+
 
 
 # get log directory
@@ -80,6 +100,7 @@ thiscmd="$bin/$(basename ${BASH_SOURCE-$0})"
 case $startStop in
 (start)
     check_before_start
+    echo "`date` Running $command" >> $HBASE_LOGLOG
     echo running $command, logging to $HBASE_LOGOUT
     $thiscmd foreground_start $command $args < /dev/null > ${HBASE_LOGOUT} 2>&1  &
     disown -h -r
@@ -118,7 +139,7 @@ case $startStop in
     rm -f $HBASE_PID
   ;;
 (*)
-    echo $usage
+    show_usage
     exit 1
   ;;
 esac
