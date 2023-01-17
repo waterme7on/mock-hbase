@@ -14,4 +14,8 @@
     <name>hbase.cluster.distributed</name>
     <value>false</value>
   </property>
+  <property>
+    <name>hbase.regionservers</name>
+    <value>3</value>
+  </property>
 </configuration>

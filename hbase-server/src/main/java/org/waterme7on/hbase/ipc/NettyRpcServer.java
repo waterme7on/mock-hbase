@@ -3,8 +3,10 @@ package org.waterme7on.hbase.ipc;
 import org.waterme7on.hbase.Server;
 import org.apache.hadoop.conf.Configuration;
 import java.io.IOException;
+import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 
 import org.slf4j.Logger;
@@ -60,7 +62,6 @@ public class NettyRpcServer extends RpcServer {
         // initialize rpc server
         super(server, name, services, bindAddress, conf, scheduler, reservoirEnabled);
         LOG.debug("initializing NettyRpcServer");
-        this.bindAddress = bindAddress;
         this.channelAllocator = getChannelAllocator(conf);
         NettyEventLoopGroupConfig config = null;
         if (server instanceof HRegionServer) {
@@ -89,14 +90,31 @@ public class NettyRpcServer extends RpcServer {
                         pipeline.addLast("encoder", new NettyRpcServerResponseEncoder());
                     }
                 });
-        try {
-            LOG.debug(name + " binding to " + bindAddress);
-            serverChannel = bootstrap.bind(this.bindAddress).sync().channel();
-            LOG.info("Bind to {}", serverChannel.localAddress());
-        } catch (Exception e) {
-            throw new IOException("Failed to bind to " + bindAddress, e);
+        boolean flag = false;
+        Channel sc = null;
+        while (!flag) {
+            try {
+                sc = bootstrap.bind(bindAddress).sync().channel();
+                LOG.info(name + " bind to {}", sc.localAddress());
+                break;
+            } catch (Exception e) {
+                if (e instanceof BindException) {
+                    LOG.warn("Failed to bind to " + bindAddress, e);
+                    bindAddress = randomInetSocketAddress(bindAddress);
+                } else {
+                    throw new IOException("Failed to bind to " + bindAddress, e);
+                }
+            }
         }
+        this.serverChannel = sc;
+        this.bindAddress = bindAddress;
         this.scheduler.init(new RpcSchedulerContext(this));
+    }
+
+    private InetSocketAddress randomInetSocketAddress(InetSocketAddress bindAddress) throws IOException {
+        Random r = new Random();
+        int port = r.nextInt(173335) % 11737 + 10101;
+        return new InetSocketAddress(bindAddress.getAddress(), port);
     }
 
     private ByteBufAllocator getChannelAllocator(Configuration conf) throws IOException {
