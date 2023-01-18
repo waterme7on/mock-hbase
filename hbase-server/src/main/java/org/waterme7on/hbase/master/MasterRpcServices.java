@@ -4,6 +4,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterMetricsBuilder;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.io.ByteBuffAllocator;
 import org.waterme7on.hbase.ipc.RpcServerInterface;
 import org.waterme7on.hbase.ipc.RpcServer.BlockingServiceAndInterface;
@@ -53,6 +54,7 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.Remov
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.RemoveReplicationPeerResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.UpdateReplicationPeerConfigRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.UpdateReplicationPeerConfigResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GetUserPermissionsRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GetUserPermissionsResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GrantRequest;
@@ -368,10 +370,19 @@ public class MasterRpcServices extends RSRpcServices
     }
 
     @Override
-    public CreateTableResponse createTable(RpcController controller, CreateTableRequest request)
+    public CreateTableResponse createTable(RpcController controller, CreateTableRequest req)
             throws ServiceException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'createTable'");
+        TableDescriptor tableDescriptor = ProtobufUtil.toTableDescriptor(req.getTableSchema());
+        byte[][] splitKeys = ProtobufUtil.getSplitKeysArray(req);
+        try {
+            long procId = master.createTable(tableDescriptor, splitKeys, req.getNonceGroup(), req.getNonce());
+            LOG.info(master.getClientIdAuditPrefix() + " procedure request for creating table: "
+                    + req.getTableSchema().getTableName());
+            // CreateTableResponse.newBuilder().
+            return CreateTableResponse.newBuilder().setProcId(procId).build();
+        } catch (IOException ioe) {
+            throw new ServiceException(ioe);
+        }
     }
 
     @Override
@@ -644,8 +655,9 @@ public class MasterRpcServices extends RSRpcServices
     @Override
     public GetProcedureResultResponse getProcedureResult(RpcController controller, GetProcedureResultRequest request)
             throws ServiceException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getProcedureResult'");
+        GetProcedureResultResponse.Builder builder= GetProcedureResultResponse.newBuilder();
+        builder.setState(GetProcedureResultResponse.State.FINISHED);
+        return builder.build();
     }
 
     @Override

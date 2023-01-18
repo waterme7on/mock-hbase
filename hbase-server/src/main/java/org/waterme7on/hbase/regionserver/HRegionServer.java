@@ -10,6 +10,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.NotServingRegionException;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.waterme7on.hbase.TableDescriptors;
 import org.waterme7on.hbase.client.ClusterConnection;
@@ -49,6 +50,8 @@ import org.waterme7on.hbase.master.HMaster;
 import org.waterme7on.hbase.master.MasterRpcServices;
 import org.waterme7on.hbase.util.FSTableDescriptors;
 import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
+
+import com.google.protobuf.Service;
 
 import org.apache.hbase.thirdparty.com.google.protobuf.ServiceException;
 
@@ -296,6 +299,22 @@ public class HRegionServer extends Thread implements RegionServerServices {
 
     protected RSRpcServices createRpcServices() throws IOException {
         return new RSRpcServices(this);
+    }
+
+    @Override
+    public Connection getConnection() {
+        return getClusterConnection();
+    }
+
+    @Override
+    public ClusterConnection getClusterConnection() {
+        return this.clusterConnection;
+    }
+
+    @Override
+    public Connection createConnection(Configuration conf) throws IOException {
+        return ServerConnectionUtils.createShortCircuitConnection(conf, User.getCurrent(), this.serverName,
+                this.rpcServices, this.rpcServices, null);
     }
 
     /**
@@ -759,8 +778,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
                 }
                 // If we are not the active master, then create using the RPC client
                 try {
-                    BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(sn,
-                            User.getCurrent(), shortOperationTimeout);
+                    BlockingRpcChannel channel = createChannelToServerName(sn);
                     LOG.debug(channel.toString());
                     LOG.debug(this.rpcClient.toString() + "," + this.rpcClient.getClass().getName());
                     intRssStub = RegionServerStatusService.newBlockingStub(channel);
@@ -999,4 +1017,15 @@ public class HRegionServer extends Thread implements RegionServerServices {
         }
         return allRegions;
     }
+
+    @Override
+    public void registerService(Service service) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'registerService'");
+    }
+
+    BlockingRpcChannel createChannelToServerName(ServerName sn) throws IOException {
+        return this.rpcClient.createBlockingRpcChannel(sn, User.getCurrent(), shortOperationTimeout);
+    }
+
 }

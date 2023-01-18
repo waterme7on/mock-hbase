@@ -1,12 +1,11 @@
 package org.waterme7on.hbase.regionserver;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellComparator;
 import org.apache.hadoop.hbase.CompareOperator;
@@ -29,6 +28,8 @@ import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.util.Bytes;
 
+import static org.apache.hadoop.hbase.util.Bytes.*;
+
 /*
 *  * <pre>
 * hbase
@@ -49,6 +50,9 @@ public class HRegion implements Region {
     private long flushSize;
     private long flushIntervalMs;
     private final HRegionFileSystem fs;
+
+    protected final Map<byte[], HStore> stores =
+            new ConcurrentSkipListMap<>(BYTES_RAWCOMPARATOR);
 
     // TODO
     public HRegion(Configuration conf) {
@@ -112,14 +116,12 @@ public class HRegion implements Region {
 
     @Override
     public List<? extends Store> getStores() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getStores'");
+        return new ArrayList<>(stores.values());
     }
 
     @Override
     public Store getStore(byte[] family) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getStore'");
+        return this.stores.get(family);
     }
 
     @Override
@@ -395,7 +397,15 @@ public class HRegion implements Region {
      * @return true if the row is within the range specified by the RegionInfo
      */
     public static boolean rowIsInRange(RegionInfo info, final byte[] row) {
-        return ((info.getStartKey().length == 0) || (Bytes.compareTo(info.getStartKey(), row) <= 0))
-                && ((info.getEndKey().length == 0) || (Bytes.compareTo(info.getEndKey(), row) > 0));
+        return ((info.getStartKey().length == 0) || (compareTo(info.getStartKey(), row) <= 0))
+                && ((info.getEndKey().length == 0) || (compareTo(info.getEndKey(), row) > 0));
+    }
+
+    public static HRegion createHRegion(RegionInfo newRegion, Path rootDir, Configuration conf,
+            TableDescriptor tableDescriptor, Object object, boolean b) {
+        return null;
+    }
+
+    public void close() {
     }
 }

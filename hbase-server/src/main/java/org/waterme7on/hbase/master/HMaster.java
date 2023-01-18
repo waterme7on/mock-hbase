@@ -8,7 +8,14 @@ import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.ClusterMetrics;
 import org.apache.hadoop.hbase.ClusterMetricsBuilder;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.MasterNotRunningException;
+import org.apache.hadoop.hbase.PleaseHoldException;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.client.TableDescriptor;
+import org.apache.hadoop.hbase.exceptions.MasterStoppedException;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.log.HBaseMarkers;
 import org.apache.hadoop.hbase.ServerMetrics;
@@ -28,6 +35,11 @@ import org.waterme7on.hbase.regionserver.HRegion;
 import org.waterme7on.hbase.regionserver.HRegionFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
 import org.waterme7on.hbase.regionserver.RSRpcServices;
+import org.waterme7on.hbase.util.ModifyRegionUtils;
+
+import com.google.protobuf.Service;
+
+import org.waterme7on.hbase.procedure2.ProcedureEvent;
 
 import java.io.IOException;
 import java.io.InterruptedIOException;
@@ -40,6 +52,7 @@ import java.net.UnknownHostException;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
 
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
@@ -47,6 +60,8 @@ import org.apache.hbase.thirdparty.org.eclipse.jetty.server.ServerConnector;
 import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
+import org.waterme7on.hbase.TableDescriptors;
+import org.waterme7on.hbase.client.ClusterConnection;
 import org.waterme7on.hbase.ipc.RpcServer;
 import org.waterme7on.hbase.monitoring.MonitoredTask;
 import org.waterme7on.hbase.monitoring.TaskMonitor;
@@ -63,15 +78,20 @@ public class HMaster extends HRegionServer implements MasterServices {
     // Manager and zk listener for master election
     private final ActiveMasterManager activeMasterManager;
 
+    private ClusterSchemaService clusterSchemaService;
     // MASTER is name of the webapp and the attribute name used stuffing this
     // instance into a web context !! AND OTHER PLACES !!
     public static final String MASTER = "master";
     // flag set after we become the active master (used for testing)
     private volatile boolean activeMaster = false;
+    // flag set after we complete initialization once active
+    private final ProcedureEvent<?> initialized = new ProcedureEvent<>("master initialized");
+
     private HRegion masterRegion;
     private RegionServerList rsListStorage;
     // server manager to deal with region server info
     private volatile ServerManager serverManager;
+    private HashMap<TableName, ServerName> tableToServer = new HashMap<>();
     // flag set after master services are started,
     // initialization may have not completed yet.
     volatile boolean serviceStarted = false;
@@ -518,11 +538,6 @@ public class HMaster extends HRegionServer implements MasterServices {
     }
 
     @Override
-    public boolean isStopped() {
-        return false;
-    }
-
-    @Override
     public MasterFileSystem getMasterFileSystem() {
         return this.fileSystemManager;
     }
@@ -561,6 +576,51 @@ public class HMaster extends HRegionServer implements MasterServices {
         if (!serviceStarted) {
             throw new ServerNotRunningYetException("Server is not running yet");
         }
+    }
+
+    public long createTable(final TableDescriptor tableDescriptor, final byte[][] splitKeys, final long nonceGroup,
+            final long nonce) throws IOException {
+        checkInitialized();
+        TableDescriptor desc = tableDescriptor;
+        // String namespace = desc.getTableName().getNamespaceAsString();
+        // RegionInfo[] newRegions = ModifyRegionUtils.createRegionInfos(desc,
+        // splitKeys);
+        if (this.tableToServer.containsKey(desc.getTableName())) {
+            throw new IOException("Table " + desc.getTableName() + " already exists");
+        }
+        ServerName selected = selectServer();
+        this.tableToServer.put(desc.getTableName(), selected);
+        LOG.debug(
+                "createTable: " + desc.getTableName() + " stored to " + selected);
+        return 0;
+    }
+
+    private ServerName selectServer() {
+        Random r = new Random();
+        int i = r.nextInt(this.serverManager.getOnlineServers().size());
+        return this.serverManager.getOnlineServers().keySet().toArray(new ServerName[0])[i];
+    }
+
+    void checkInitialized() throws PleaseHoldException, ServerNotRunningYetException,
+            MasterNotRunningException, MasterStoppedException {
+        checkServiceStarted();
+        if (isStopped()) {
+            throw new MasterStoppedException();
+        }
+    }
+
+    /**
+     * Report whether this master has completed with its initialization and is
+     * ready. If ready, the
+     * master is also the active master. A standby master is never ready. This
+     * method is used for
+     * testing.
+     * 
+     * @return true if master is ready to go, false if not.
+     */
+    @Override
+    public boolean isInitialized() {
+        return serviceStarted;
     }
 
     /**
@@ -627,4 +687,25 @@ public class HMaster extends HRegionServer implements MasterServices {
         }
     }
 
+    @Override
+    public TableDescriptors getTableDescriptors() {
+        return this.tableDescriptors;
+    }
+
+    @Override
+    public ClusterSchema getClusterSchema() {
+        return this.clusterSchemaService;
+    }
+
+    @Override
+    public void createSystemTable(TableDescriptor td) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'createSystemTable'");
+    }
+
+    @Override
+    public TableStateManager getTableStateManager() {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getTableStateManager'");
+    }
 }

@@ -1,6 +1,7 @@
 package org.waterme7on.hbase.master;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.CommandLine;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.GnuParser;
@@ -8,10 +9,8 @@ import org.apache.hbase.thirdparty.org.apache.commons.cli.Options;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.ZooKeeperConnectionException;
-import org.apache.hadoop.hbase.client.Admin;
-import org.apache.hadoop.hbase.client.Connection;
-import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.ipc.RpcClient;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.trace.TraceUtil;
@@ -93,7 +92,6 @@ public class HMasterCommandLine extends ServerCommandLine {
             // LOG.debug("sn:" + sn.toString());
             try {
                 Admin admin = connection.getAdmin();
-                LOG.debug("eeee:" + admin.toString());
                 admin.shutdown();
             } catch (Throwable t) {
                 LOG.error("Failed to stop master", t);
@@ -108,6 +106,44 @@ public class HMasterCommandLine extends ServerCommandLine {
         } catch (IOException e) {
             LOG.error("Got IOException: " + e.getMessage(), e);
             return 1;
+        }
+        return 0;
+    }
+
+    private int createTable(String tableName) {
+        Configuration conf = getConf();
+        // Don't try more than once
+        conf.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 0);
+        try {
+            Connection connection = ConnectionFactory.createConnection(conf);
+            Admin admin = connection.getAdmin();
+            TableDescriptor td = TableDescriptorBuilder.newBuilder(TableName.valueOf(tableName))
+                    .setColumnFamily(ColumnFamilyDescriptorBuilder.of("cf"))
+                    .build();
+            admin.createTable(td);
+            return 1;
+        } catch (IOException e) {
+            LOG.error("Got IOException: " + e.getMessage(), e);
+        }
+        return 0;
+    }
+
+    private int getTable(String tableName) {
+        Configuration conf = getConf();
+        // Don't try more than once
+        conf.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 0);
+        try {
+            Connection connection = ConnectionFactory.createConnection(conf);
+
+            Admin admin = connection.getAdmin();
+            TableDescriptor td = TableDescriptorBuilder.newBuilder(TableName.valueOf("test"))
+                    .setColumnFamily(ColumnFamilyDescriptorBuilder.of("cf"))
+                    .build();
+            Table t = connection.getTable(TableName.valueOf(tableName));
+            LOG.debug(t.toString());
+            return 1;
+        } catch (IOException e) {
+            LOG.error("Got IOException: " + e.getMessage(), e);
         }
         return 0;
     }
@@ -177,26 +213,28 @@ public class HMasterCommandLine extends ServerCommandLine {
 
         // Resolve remain arguments
         List<String> remainingArgs = cmd.getArgList();
-        if (remainingArgs.size() != 1) {
-            usage(null);
-            return 1;
-        }
+//        if (remainingArgs.size() != 1) {
+//            usage(null);
+//            return 1;
+//        }
+        LOG.debug("remainingArgs: {}", (remainingArgs.size()));
 
         String command = remainingArgs.get(0);
 
         if ("start".equals(command)) {
             return startMaster();
         } else if ("stop".equals(command)) {
-            // if (shutDownCluster) {
             return stopMaster();
-            // }
-            // System.err.println("To shutdown the master run "
-            // + "hbase-daemon.sh stop master or send a kill signal to the HMaster pid, "
-            // + "and to stop HBase Cluster run \"stop-hbase.sh\" or \"hbase master "
-            // + "stop --shutDownCluster\"");
-            // return 1;
-            // } else if ("clear".equals(command)) {
-            // return (ZNodeClearer.clear(getConf()) ? 0 : 1);
+        } else if ("createTable".equals(command)) {
+            if (remainingArgs.size() != 2) {
+                return 0;
+            }
+            return createTable(remainingArgs.get(1));
+        } else if ("getTable".equals(command)) {
+            if (remainingArgs.size() != 2) {
+                return 0;
+            }
+            return getTable(remainingArgs.get(1));
         } else {
             usage("Invalid command: " + command);
             return 1;

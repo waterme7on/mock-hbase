@@ -28,11 +28,11 @@ shift
 command=$1
 shift
 
-# if no args specified, show usage
-if [ ! -n "$command" ]; then
-  show_usage
-  exit 1
-fi
+# # if no args specified, show usage
+# if [ ! -n "$command" ]; then
+#   show_usage
+#   exit 1
+# fi
 
 
 
@@ -120,6 +120,7 @@ case $startStop in
   ;;
 
 (foreground_stop)
+    trap cleanAfterRun SIGHUP SIGINT SIGTERM EXIT
     echo "`date` Stopping $command on `hostname`"
     nice -n $HBASE_NICENESS "$HBASE_HOME"/bin/hbase.sh $command "$@" stop < /dev/null > /dev/null 2>&1 &
     hbase_pid=$!

@@ -18,3 +18,4 @@ hbase-*/test
 .vscode/
 logs/
 *.DS_Store
+.DS_Store

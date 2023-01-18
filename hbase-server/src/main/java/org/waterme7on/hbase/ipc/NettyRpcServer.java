@@ -99,7 +99,7 @@ public class NettyRpcServer extends RpcServer {
                 break;
             } catch (Exception e) {
                 if (e instanceof BindException) {
-                    LOG.warn("Failed to bind to " + bindAddress, e);
+                    LOG.warn("Failed to bind to " + bindAddress, e.getMessage());
                     bindAddress = randomInetSocketAddress(bindAddress);
                 } else {
                     throw new IOException("Failed to bind to " + bindAddress, e);

@@ -58,7 +58,7 @@ public class TestNettyRpcServer {
         InetSocketAddress bindAddress = new InetSocketAddress(
                 conf.get("hbase.regionserver.ipc.address", hostname), port);
 
-        Server rs = new TestServer();
+        // Server rs = new TestServer();
 
         // RpcServer rpcServer = RpcServerFactory.createRpcServer(rs, "test",
         // getServices(), bindAddress,
@@ -86,49 +86,4 @@ public class TestNettyRpcServer {
 
     }
 
-    static class TestServer implements Server {
-
-        @Override
-        public void abort(String why, Throwable e) {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
-        public boolean isAborted() {
-            // TODO Auto-generated method stub
-            return false;
-        }
-
-        @Override
-        public void stop(String why) {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
-        public boolean isStopped() {
-            // TODO Auto-generated method stub
-            return false;
-        }
-
-        @Override
-        public Configuration getConfiguration() {
-            // TODO Auto-generated method stub
-            return null;
-        }
-
-        @Override
-        public ZKWatcher getZooKeeper() {
-            // TODO Auto-generated method stub
-            return null;
-        }
-
-        @Override
-        public ServerName getServerName() {
-            // TODO Auto-generated method stub
-            return null;
-        }
-
-    }
 }
