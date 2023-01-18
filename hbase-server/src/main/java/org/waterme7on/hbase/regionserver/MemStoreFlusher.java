@@ -1,5 +1,135 @@
 package org.waterme7on.hbase.regionserver;
 
-public class MemStoreFlusher {
+import java.util.List;
+
+import org.apache.hadoop.hbase.trace.TraceUtil;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
+
+import io.opentelemetry.api.trace.Span;
+
+public class MemStoreFlusher implements FlushRequester {
+
+    /**
+     * Check if the regionserver's memstore memory usage is greater than the limit.
+     * If so, flush
+     * regions with the biggest memstores until we're down to the lower limit. This
+     * method blocks
+     * callers until we're down to a safe amount of memstore consumption.
+     */
+    public void reclaimMemStoreMemory() {
+        Span span = TraceUtil.getGlobalTracer().spanBuilder("MemStoreFluser.reclaimMemStoreMemory").startSpan();
+        try (Scope scope = span.makeCurrent()) {
+            FlushType flushType = isAboveHighWaterMark();
+            if (flushType != FlushType.NORMAL) {
+                span.addEvent("Force Flush. We're above high water mark.");
+                long start = EnvironmentEdgeManager.currentTime();
+                long nextLogTimeMs = start;
+                synchronized (this.blockSignal) {
+                    boolean blocked = false;
+                    long startTime = 0;
+                    boolean interrupted = false;
+                    try {
+                        flushType = isAboveHighWaterMark();
+                        while (flushType != FlushType.NORMAL && !server.isStopped()) {
+                            if (!blocked) {
+                                startTime = EnvironmentEdgeManager.currentTime();
+                                if (!server.getRegionServerAccounting().isOffheap()) {
+                                    logMsg("global memstore heapsize",
+                                            server.getRegionServerAccounting().getGlobalMemStoreHeapSize(),
+                                            server.getRegionServerAccounting().getGlobalMemStoreLimit());
+                                } else {
+                                    switch (flushType) {
+                                        case ABOVE_OFFHEAP_HIGHER_MARK:
+                                            logMsg("the global offheap memstore datasize",
+                                                    server.getRegionServerAccounting().getGlobalMemStoreOffHeapSize(),
+                                                    server.getRegionServerAccounting().getGlobalMemStoreLimit());
+                                            break;
+                                        case ABOVE_ONHEAP_HIGHER_MARK:
+                                            logMsg("global memstore heapsize",
+                                                    server.getRegionServerAccounting().getGlobalMemStoreHeapSize(),
+                                                    server.getRegionServerAccounting().getGlobalOnHeapMemStoreLimit());
+                                            break;
+                                        default:
+                                            break;
+                                    }
+                                }
+                            }
+                            blocked = true;
+                            wakeupFlushThread();
+                            try {
+                                // we should be able to wait forever, but we've seen a bug where
+                                // we miss a notify, so put a 5 second bound on it at least.
+                                blockSignal.wait(5 * 1000);
+                            } catch (InterruptedException ie) {
+                                LOG.warn("Interrupted while waiting");
+                                interrupted = true;
+                            }
+                            long nowMs = EnvironmentEdgeManager.currentTime();
+                            if (nowMs >= nextLogTimeMs) {
+                                LOG.warn("Memstore is above high water mark and block {} ms", nowMs - start);
+                                nextLogTimeMs = nowMs + 1000;
+                            }
+                            flushType = isAboveHighWaterMark();
+                        }
+                    } finally {
+                        if (interrupted) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+
+                    if (blocked) {
+                        final long totalTime = EnvironmentEdgeManager.currentTime() - startTime;
+                        if (totalTime > 0) {
+                            this.updatesBlockedMsHighWater.add(totalTime);
+                        }
+                        LOG.info("Unblocking updates for server " + server.toString());
+                    }
+                }
+            } else {
+                flushType = isAboveLowWaterMark();
+                if (flushType != FlushType.NORMAL) {
+                    wakeupFlushThread();
+                }
+                span.end();
+            }
+        }
+    }
+
+    @Override
+    public boolean requestFlush(HRegion region, FlushLifeCycleTracker tracker) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'requestFlush'");
+    }
+
+    @Override
+    public boolean requestFlush(HRegion region, List<byte[]> families, FlushLifeCycleTracker tracker) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'requestFlush'");
+    }
+
+    @Override
+    public boolean requestDelayedFlush(HRegion region, long delay) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'requestDelayedFlush'");
+    }
+
+    @Override
+    public void registerFlushRequestListener(FlushRequestListener listener) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'registerFlushRequestListener'");
+    }
+
+    @Override
+    public boolean unregisterFlushRequestListener(FlushRequestListener listener) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'unregisterFlushRequestListener'");
+    }
+
+    @Override
+    public void setGlobalMemStoreLimit(long globalMemStoreSize) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'setGlobalMemStoreLimit'");
+    }
+
     // TODO
 }

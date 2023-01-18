@@ -5,8 +5,10 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.CellScanner;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.io.ByteBuffAllocator;
+import org.apache.hadoop.hbase.ipc.HBaseRpcController;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.net.Address;
 import org.apache.hadoop.hbase.regionserver.RegionServerAbortedException;
@@ -87,6 +89,7 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MultiReque
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MultiResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutateRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutateResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.PrepareBulkLoadRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.PrepareBulkLoadResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.ScanRequest;
@@ -307,11 +310,6 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
         return new AnnotationReadingPriorityFunction(this);
     }
 
-    public Region getRegion(RegionSpecifier specifier) {
-        // TODO
-        return null;
-    }
-
     @Override
     public int getPriority(RequestHeader header, Message param, User user) {
         return priority.getPriority(header, param, user);
@@ -360,7 +358,40 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
     @Override
     public MutateResponse mutate(RpcController controller, MutateRequest request) throws ServiceException {
         // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'mutate'");
+        HBaseRpcController rpcc = (HBaseRpcController) controller;
+        CellScanner cellScanner = controller != null ? rpcc.cellScanner() : null;
+        RpcCallContext context = RpcServer.getCurrentCall().orElse(null);
+
+        // Clear scanner so we are not holding on to reference across call.
+        if (rpcc != null) {
+            rpcc.setCellScanner(null);
+        }
+        try {
+            checkOpen();
+            HRegion region = getRegion(request.getRegion());
+            MutationProto mutation = request.getMutation();
+            MutateResponse.Builder builder = MutateResponse.newBuilder();
+            if (!region.getRegionInfo().isMetaRegion()) {
+                regionServer.getMemStoreFlusher().reclaimMemStoreMemory();
+            }
+
+            return builder.build();
+        } catch (IOException e) {
+            throw new ServiceException(e);
+        }
+
+    }
+
+    /**
+     * Find the HRegion based on a region specifier
+     * 
+     * @param regionSpecifier the region specifier
+     * @return the corresponding region
+     * @throws IOException if the specifier is not null, but failed to find the
+     *                     region
+     */
+    public HRegion getRegion(final RegionSpecifier regionSpecifier) throws IOException {
+        return regionServer.getRegion(regionSpecifier.getValue().toByteArray());
     }
 
     @Override

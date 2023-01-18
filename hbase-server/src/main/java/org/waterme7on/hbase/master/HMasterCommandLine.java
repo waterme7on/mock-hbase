@@ -14,6 +14,9 @@ import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.ipc.RpcClient;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.trace.TraceUtil;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.ipc.Client;
+
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import org.waterme7on.hbase.ipc.RpcClientFactory;
@@ -262,19 +265,21 @@ public class HMasterCommandLine extends ServerCommandLine {
             if (inputCommand.equals("exit")) {
                 break;
             }
-            if (inputCommand.equals("createTable")) {
-                System.out.print("Enter table name: ");
-                String tableName = scanner.nextLine();
-                TableDescriptor td = TableDescriptorBuilder.newBuilder(TableName.valueOf(tableName))
-                        .setColumnFamily(ColumnFamilyDescriptorBuilder.of("cf"))
-                        .build();
-                admin.createTable(td);
-            } else if (inputCommand.equals("deleteTable")) {
-                System.out.print("Enter table name: ");
-                String tableName = scanner.nextLine();
-                admin.deleteTable(TableName.valueOf(tableName));
-            } else {
-                System.out.println("[" + inputCommand + "] is not a valid command. Please try again.");
+            switch (inputCommand) {
+                case "createTable":
+                    System.out.print("Enter table name: ");
+                    TableDescriptor td = TableDescriptorBuilder.newBuilder(TableName.valueOf(scanner.nextLine()))
+                            .setColumnFamily(ColumnFamilyDescriptorBuilder.of("cf"))
+                            .build();
+                    admin.createTable(td);
+                    break;
+                case "deleteTable":
+                    System.out.print("Enter table name: ");
+                    admin.deleteTable(TableName.valueOf(scanner.nextLine()));
+                    break;
+                default:
+                    System.out.println("[" + inputCommand + "] is not a valid command. Please try again.");
+                    break;
             }
         }
     }

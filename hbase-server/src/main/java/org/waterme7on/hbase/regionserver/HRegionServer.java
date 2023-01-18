@@ -12,6 +12,8 @@ import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.exceptions.RegionMovedException;
+import org.apache.hadoop.hbase.exceptions.RegionOpeningException;
 import org.waterme7on.hbase.TableDescriptors;
 import org.waterme7on.hbase.client.ClusterConnection;
 import org.apache.hadoop.hbase.ipc.RpcClient;
@@ -989,6 +991,45 @@ public class HRegionServer extends Thread implements RegionServerServices {
     @Override
     public HRegion getRegion(final String encodedRegionName) {
         return this.onlineRegions.get(encodedRegionName);
+    }
+
+    /**
+     * Protected Utility method for safely obtaining an HRegion handle.
+     * 
+     * @param regionName Name of online {@link HRegion} to return
+     * @return {@link HRegion} for <code>regionName</code>
+     */
+    protected HRegion getRegion(final byte[] regionName) throws NotServingRegionException {
+        String encodedRegionName = RegionInfo.encodeRegionName(regionName);
+        return getRegionByEncodedName(regionName, encodedRegionName);
+    }
+
+    public HRegion getRegionByEncodedName(String encodedRegionName) throws NotServingRegionException {
+        return getRegionByEncodedName(null, encodedRegionName);
+    }
+
+    private HRegion getRegionByEncodedName(byte[] regionName, String encodedRegionName)
+            throws NotServingRegionException {
+        HRegion region = this.onlineRegions.get(encodedRegionName);
+        if (region == null) {
+            MovedRegionInfo moveInfo = getMovedRegion(encodedRegionName);
+            if (moveInfo != null) {
+                throw new RegionMovedException(moveInfo.getServerName(), moveInfo.getSeqNum());
+            }
+            Boolean isOpening = this.regionsInTransitionInRS.get(Bytes.toBytes(encodedRegionName));
+            String regionNameStr = regionName == null ? encodedRegionName : Bytes.toStringBinary(regionName);
+            if (isOpening != null && isOpening) {
+                throw new RegionOpeningException(
+                        "Region " + regionNameStr + " is opening on " + this.serverName);
+            }
+            throw new NotServingRegionException(
+                    "" + regionNameStr + " is not online on " + this.serverName);
+        }
+        return region;
+    }
+
+    public MemStoreFlusher getMemStoreFlusher() {
+        return cacheFlusher;
     }
 
     /**
