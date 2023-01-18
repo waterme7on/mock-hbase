@@ -114,4 +114,5 @@ if [ "${#JSHELL_ARGS[@]}" -gt 0 ] ; then
 fi
 
 export JVM_PID="$$"
+
 exec "$JAVA" -Dproc_$COMMAND -XX:OnOutOfMemoryError="kill -9 %p" -Dorg.slf4j.simpleLogger.defaultLogLevel=debug -cp $CLASSPATH $HBASE_OPTS $CLASS "${CMD_ARGS[@]}"

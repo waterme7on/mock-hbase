@@ -29,6 +29,7 @@ import org.waterme7on.hbase.util.ClusterUtil;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Scanner;
 
 public class HMasterCommandLine extends ServerCommandLine {
     private static final Logger LOG = LoggerFactory.getLogger(HMasterCommandLine.class);
@@ -128,7 +129,7 @@ public class HMasterCommandLine extends ServerCommandLine {
         return 0;
     }
 
-    private int getTable(String tableName) {
+    private int deleteTable(String tableName) {
         Configuration conf = getConf();
         // Don't try more than once
         conf.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 0);
@@ -136,11 +137,12 @@ public class HMasterCommandLine extends ServerCommandLine {
             Connection connection = ConnectionFactory.createConnection(conf);
 
             Admin admin = connection.getAdmin();
-            TableDescriptor td = TableDescriptorBuilder.newBuilder(TableName.valueOf("test"))
-                    .setColumnFamily(ColumnFamilyDescriptorBuilder.of("cf"))
-                    .build();
-            Table t = connection.getTable(TableName.valueOf(tableName));
-            LOG.debug(t.toString());
+            // TableDescriptor td =
+            // TableDescriptorBuilder.newBuilder(TableName.valueOf(tableName))
+            // .setColumnFamily(ColumnFamilyDescriptorBuilder.of("cf"))
+            // .build();
+            // Table t = connection.getTable(TableName.valueOf(tableName));
+            admin.deleteTable(TableName.valueOf(tableName));
             return 1;
         } catch (IOException e) {
             LOG.error("Got IOException: " + e.getMessage(), e);
@@ -213,10 +215,10 @@ public class HMasterCommandLine extends ServerCommandLine {
 
         // Resolve remain arguments
         List<String> remainingArgs = cmd.getArgList();
-//        if (remainingArgs.size() != 1) {
-//            usage(null);
-//            return 1;
-//        }
+        // if (remainingArgs.size() != 1) {
+        // usage(null);
+        // return 1;
+        // }
         LOG.debug("remainingArgs: {}", (remainingArgs.size()));
 
         String command = remainingArgs.get(0);
@@ -230,16 +232,51 @@ public class HMasterCommandLine extends ServerCommandLine {
                 return 0;
             }
             return createTable(remainingArgs.get(1));
-        } else if ("getTable".equals(command)) {
+        } else if ("deleteTable".equals(command)) {
             if (remainingArgs.size() != 2) {
                 return 0;
             }
-            return getTable(remainingArgs.get(1));
+            return deleteTable(remainingArgs.get(1));
+        } else if ("shell".equals(command)) {
+            shell();
         } else {
             usage("Invalid command: " + command);
             return 1;
         }
+        return 0;
+    }
 
+    void shell() throws IOException {
+        Configuration conf = getConf();
+        conf.addResource(null, "hbase-site.xml");
+        conf.addResource("hbase-site.xml");
+
+        Scanner scanner = new Scanner(System.in);
+        String inputCommand;
+        Connection connection = ConnectionFactory.createConnection(conf);
+        Admin admin = connection.getAdmin();
+
+        while (true) {
+            System.out.print("hbase(main):001:0> ");
+            inputCommand = scanner.nextLine();
+            if (inputCommand.equals("exit")) {
+                break;
+            }
+            if (inputCommand.equals("createTable")) {
+                System.out.print("Enter table name: ");
+                String tableName = scanner.nextLine();
+                TableDescriptor td = TableDescriptorBuilder.newBuilder(TableName.valueOf(tableName))
+                        .setColumnFamily(ColumnFamilyDescriptorBuilder.of("cf"))
+                        .build();
+                admin.createTable(td);
+            } else if (inputCommand.equals("deleteTable")) {
+                System.out.print("Enter table name: ");
+                String tableName = scanner.nextLine();
+                admin.deleteTable(TableName.valueOf(tableName));
+            } else {
+                System.out.println("[" + inputCommand + "] is not a valid command. Please try again.");
+            }
+        }
     }
 
     @Override

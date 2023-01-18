@@ -655,7 +655,7 @@ public class MasterRpcServices extends RSRpcServices
     @Override
     public GetProcedureResultResponse getProcedureResult(RpcController controller, GetProcedureResultRequest request)
             throws ServiceException {
-        GetProcedureResultResponse.Builder builder= GetProcedureResultResponse.newBuilder();
+        GetProcedureResultResponse.Builder builder = GetProcedureResultResponse.newBuilder();
         builder.setState(GetProcedureResultResponse.State.FINISHED);
         return builder.build();
     }

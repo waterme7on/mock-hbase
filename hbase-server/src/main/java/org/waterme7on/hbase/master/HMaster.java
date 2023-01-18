@@ -339,7 +339,7 @@ public class HMaster extends HRegionServer implements MasterServices {
                     LOG.error("ZooKeeper exception trying to set cluster as down in ZK", e);
                 }
             }
-
+            this.sleeper.sleep();
         }, "HMaster.shutdown");
     }
 
@@ -586,13 +586,23 @@ public class HMaster extends HRegionServer implements MasterServices {
         // RegionInfo[] newRegions = ModifyRegionUtils.createRegionInfos(desc,
         // splitKeys);
         if (this.tableToServer.containsKey(desc.getTableName())) {
-            throw new IOException("Table " + desc.getTableName() + " already exists");
+            return 0;
         }
         ServerName selected = selectServer();
         this.tableToServer.put(desc.getTableName(), selected);
         LOG.debug(
                 "createTable: " + desc.getTableName() + " stored to " + selected);
-        return 0;
+        return 1;
+    }
+
+    public long deleteTable(final TableName tableName, final long nonceGroup, final long nonce) throws IOException {
+        checkInitialized();
+        if (!this.tableToServer.containsKey(tableName)) {
+            return 0;
+        }
+        this.tableToServer.remove(tableName);
+        LOG.debug("deleteTable: " + tableName + " removed");
+        return 1;
     }
 
     private ServerName selectServer() {
@@ -679,7 +689,7 @@ public class HMaster extends HRegionServer implements MasterServices {
      * @see org.waterme7on.hbase.master.HMasterCommandLine
      */
     public static void main(String[] args) {
-        LOG.info("STARTING service " + HMaster.class.getSimpleName());
+        // LOG.info("STARTING service " + HMaster.class.getSimpleName());
         if (args.length == 0) {
             new HMasterCommandLine(HMaster.class).doMain(new String[] { "start" });
         } else {

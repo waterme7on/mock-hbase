@@ -326,6 +326,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
      * exception that caused
      * the abort, or null
      */
+    @Override
     public void abort(String why, Throwable e) {
         if (!setAbortRequested()) {
             // Abort already in progress, ignore the new request.
@@ -508,6 +509,8 @@ public class HRegionServer extends Thread implements RegionServerServices {
                     this.sleeper.sleep();
                 }
             }
+            // TODO: cleanup
+            this.sleeper.sleep();
         } catch (Throwable e) {
             abort("Fatal exception during registration", e);
         }
