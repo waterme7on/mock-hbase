@@ -17,3 +17,4 @@ hbase-*/test
 *.jar
 .vscode/
 logs/
+*.DS_Store
