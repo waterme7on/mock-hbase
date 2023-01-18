@@ -1,6 +1,7 @@
 package org.waterme7on.hbase.master;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.ClusterMetricsBuilder;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.io.ByteBuffAllocator;
@@ -21,15 +22,58 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
-import org.waterme7on.hbase.protobuf.generated.HBaseProtos.NameStringPair;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.FileArchiveNotificationRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.FileArchiveNotificationResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerReportRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerReportResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionSpaceUseReportRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionSpaceUseReportResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportProcedureDoneRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportProcedureDoneResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportRegionStateTransitionRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.ReportRegionStateTransitionResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.AddReplicationPeerRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.AddReplicationPeerResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.DisableReplicationPeerRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.DisableReplicationPeerResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.EnableReplicationPeerRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.EnableReplicationPeerResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.GetReplicationPeerConfigRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.GetReplicationPeerConfigResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.ListReplicationPeersRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.ListReplicationPeersResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.RemoveReplicationPeerRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.RemoveReplicationPeerResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.UpdateReplicationPeerConfigRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ReplicationProtos.UpdateReplicationPeerConfigResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GetUserPermissionsRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GetUserPermissionsResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GrantRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.GrantResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.HasUserPermissionsRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.HasUserPermissionsResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.RevokeRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AccessControlProtos.RevokeResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.CoprocessorServiceRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.NameStringPair;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.MasterProtos.*;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetQuotaStatesRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetQuotaStatesResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetSpaceQuotaRegionSizesRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetSpaceQuotaRegionSizesResponse;
 import org.apache.hbase.thirdparty.com.google.protobuf.RpcController;
 import org.apache.hbase.thirdparty.com.google.protobuf.ServiceException;
 
 public class MasterRpcServices extends RSRpcServices
-        implements RegionServerStatusService.BlockingInterface {
+        implements MasterService.BlockingInterface, RegionServerStatusService.BlockingInterface {
     private static final Logger LOG = LoggerFactory.getLogger(MasterRpcServices.class.getName());
 
     private final HMaster master;
@@ -39,6 +83,7 @@ public class MasterRpcServices extends RSRpcServices
         master = m;
     }
 
+    // @Override
     protected RpcServerInterface createRpcServer(final Server server,
             final RpcSchedulerFactory rpcSchedulerFactory, final InetSocketAddress bindAddress,
             final String name) throws IOException {
@@ -66,6 +111,8 @@ public class MasterRpcServices extends RSRpcServices
         List<BlockingServiceAndInterface> bssi = new ArrayList<>(5);
         bssi.add(new BlockingServiceAndInterface(RegionServerStatusService.newReflectiveBlockingService(this),
                 RegionServerStatusService.BlockingInterface.class));
+        bssi.add(new BlockingServiceAndInterface(MasterService.newReflectiveBlockingService(this),
+                MasterService.BlockingInterface.class));
         bssi.addAll(super.getServices());
         return bssi;
     }
@@ -121,5 +168,682 @@ public class MasterRpcServices extends RSRpcServices
         } catch (IOException ioe) {
             throw new ServiceException(ioe);
         }
+    }
+
+    @Override
+    public RegionServerReportResponse regionServerReport(RpcController controller, RegionServerReportRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ReportRSFatalErrorResponse reportRSFatalError(RpcController controller, ReportRSFatalErrorRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetLastFlushedSequenceIdResponse getLastFlushedSequenceId(RpcController controller,
+            GetLastFlushedSequenceIdRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ReportRegionStateTransitionResponse reportRegionStateTransition(RpcController controller,
+            ReportRegionStateTransitionRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public RegionSpaceUseReportResponse reportRegionSpaceUse(RpcController controller,
+            RegionSpaceUseReportRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ReportProcedureDoneResponse reportProcedureDone(RpcController controller, ReportProcedureDoneRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public FileArchiveNotificationResponse reportFileArchival(RpcController controller,
+            FileArchiveNotificationRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public GetSchemaAlterStatusResponse getSchemaAlterStatus(RpcController controller,
+            GetSchemaAlterStatusRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getSchemaAlterStatus'");
+    }
+
+    @Override
+    public GetTableDescriptorsResponse getTableDescriptors(RpcController controller, GetTableDescriptorsRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getTableDescriptors'");
+    }
+
+    @Override
+    public GetTableNamesResponse getTableNames(RpcController controller, GetTableNamesRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getTableNames'");
+    }
+
+    @Override
+    public GetClusterStatusResponse getClusterStatus(RpcController controller, GetClusterStatusRequest request)
+            throws ServiceException {
+        GetClusterStatusResponse.Builder response = GetClusterStatusResponse.newBuilder();
+        try {
+            // We used to check if Master was up at this point but let this call proceed
+            // even if
+            // Master is initializing... else we shut out stuff like hbck2 tool from making
+            // progress
+            // since it queries this method to figure cluster version. hbck2 wants to be
+            // able to work
+            // against Master even if it is 'initializing' so it can do fixup.
+            response.setClusterStatus(ClusterMetricsBuilder.toClusterStatus(
+                    master.getClusterMetrics(ClusterMetricsBuilder.toOptions(request.getOptionsList()))));
+        } catch (IOException e) {
+            throw new ServiceException(e);
+        }
+        return response.build();
+    }
+
+    @Override
+    public IsMasterRunningResponse isMasterRunning(RpcController controller, IsMasterRunningRequest request)
+            throws ServiceException {
+        try {
+            master.checkServiceStarted();
+            return IsMasterRunningResponse.newBuilder().setIsMasterRunning(!master.isStopped()).build();
+        } catch (IOException e) {
+            throw new ServiceException(e);
+        }
+    }
+
+    @Override
+    public AddColumnResponse addColumn(RpcController controller, AddColumnRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'addColumn'");
+    }
+
+    @Override
+    public DeleteColumnResponse deleteColumn(RpcController controller, DeleteColumnRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'deleteColumn'");
+    }
+
+    @Override
+    public ModifyColumnResponse modifyColumn(RpcController controller, ModifyColumnRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'modifyColumn'");
+    }
+
+    @Override
+    public MoveRegionResponse moveRegion(RpcController controller, MoveRegionRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'moveRegion'");
+    }
+
+    @Override
+    public MergeTableRegionsResponse mergeTableRegions(RpcController controller, MergeTableRegionsRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'mergeTableRegions'");
+    }
+
+    @Override
+    public AssignRegionResponse assignRegion(RpcController controller, AssignRegionRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'assignRegion'");
+    }
+
+    @Override
+    public UnassignRegionResponse unassignRegion(RpcController controller, UnassignRegionRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'unassignRegion'");
+    }
+
+    @Override
+    public OfflineRegionResponse offlineRegion(RpcController controller, OfflineRegionRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'offlineRegion'");
+    }
+
+    @Override
+    public SplitTableRegionResponse splitRegion(RpcController controller, SplitTableRegionRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'splitRegion'");
+    }
+
+    @Override
+    public DeleteTableResponse deleteTable(RpcController controller, DeleteTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'deleteTable'");
+    }
+
+    @Override
+    public TruncateTableResponse truncateTable(RpcController controller, TruncateTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'truncateTable'");
+    }
+
+    @Override
+    public EnableTableResponse enableTable(RpcController controller, EnableTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'enableTable'");
+    }
+
+    @Override
+    public DisableTableResponse disableTable(RpcController controller, DisableTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'disableTable'");
+    }
+
+    @Override
+    public ModifyTableResponse modifyTable(RpcController controller, ModifyTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'modifyTable'");
+    }
+
+    @Override
+    public CreateTableResponse createTable(RpcController controller, CreateTableRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'createTable'");
+    }
+
+    @Override
+    public ShutdownResponse shutdown(RpcController controller, ShutdownRequest request) throws ServiceException {
+        LOG.info(master.getClientIdAuditPrefix() + " shutdown");
+        try {
+            master.shutdown();
+        } catch (IOException e) {
+            LOG.error("Exception occurred in HMaster.shutdown()", e);
+            throw new ServiceException(e);
+        }
+        return ShutdownResponse.newBuilder().build();
+    }
+
+    @Override
+    public StopMasterResponse stopMaster(RpcController controller, StopMasterRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'stopMaster'");
+    }
+
+    @Override
+    public IsInMaintenanceModeResponse isMasterInMaintenanceMode(RpcController controller,
+            IsInMaintenanceModeRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isMasterInMaintenanceMode'");
+    }
+
+    @Override
+    public BalanceResponse balance(RpcController controller, BalanceRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'balance'");
+    }
+
+    @Override
+    public SetBalancerRunningResponse setBalancerRunning(RpcController controller, SetBalancerRunningRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'setBalancerRunning'");
+    }
+
+    @Override
+    public IsBalancerEnabledResponse isBalancerEnabled(RpcController controller, IsBalancerEnabledRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isBalancerEnabled'");
+    }
+
+    @Override
+    public SetSplitOrMergeEnabledResponse setSplitOrMergeEnabled(RpcController controller,
+            SetSplitOrMergeEnabledRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'setSplitOrMergeEnabled'");
+    }
+
+    @Override
+    public IsSplitOrMergeEnabledResponse isSplitOrMergeEnabled(RpcController controller,
+            IsSplitOrMergeEnabledRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isSplitOrMergeEnabled'");
+    }
+
+    @Override
+    public NormalizeResponse normalize(RpcController controller, NormalizeRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'normalize'");
+    }
+
+    @Override
+    public SetNormalizerRunningResponse setNormalizerRunning(RpcController controller,
+            SetNormalizerRunningRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'setNormalizerRunning'");
+    }
+
+    @Override
+    public IsNormalizerEnabledResponse isNormalizerEnabled(RpcController controller, IsNormalizerEnabledRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isNormalizerEnabled'");
+    }
+
+    @Override
+    public RunCatalogScanResponse runCatalogScan(RpcController controller, RunCatalogScanRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'runCatalogScan'");
+    }
+
+    @Override
+    public EnableCatalogJanitorResponse enableCatalogJanitor(RpcController controller,
+            EnableCatalogJanitorRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'enableCatalogJanitor'");
+    }
+
+    @Override
+    public IsCatalogJanitorEnabledResponse isCatalogJanitorEnabled(RpcController controller,
+            IsCatalogJanitorEnabledRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isCatalogJanitorEnabled'");
+    }
+
+    @Override
+    public RunCleanerChoreResponse runCleanerChore(RpcController controller, RunCleanerChoreRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'runCleanerChore'");
+    }
+
+    @Override
+    public SetCleanerChoreRunningResponse setCleanerChoreRunning(RpcController controller,
+            SetCleanerChoreRunningRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'setCleanerChoreRunning'");
+    }
+
+    @Override
+    public IsCleanerChoreEnabledResponse isCleanerChoreEnabled(RpcController controller,
+            IsCleanerChoreEnabledRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isCleanerChoreEnabled'");
+    }
+
+    @Override
+    public CoprocessorServiceResponse execMasterService(RpcController controller, CoprocessorServiceRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'execMasterService'");
+    }
+
+    @Override
+    public SnapshotResponse snapshot(RpcController controller, SnapshotRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'snapshot'");
+    }
+
+    @Override
+    public GetCompletedSnapshotsResponse getCompletedSnapshots(RpcController controller,
+            GetCompletedSnapshotsRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getCompletedSnapshots'");
+    }
+
+    @Override
+    public DeleteSnapshotResponse deleteSnapshot(RpcController controller, DeleteSnapshotRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'deleteSnapshot'");
+    }
+
+    @Override
+    public IsSnapshotDoneResponse isSnapshotDone(RpcController controller, IsSnapshotDoneRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isSnapshotDone'");
+    }
+
+    @Override
+    public RestoreSnapshotResponse restoreSnapshot(RpcController controller, RestoreSnapshotRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'restoreSnapshot'");
+    }
+
+    @Override
+    public SetSnapshotCleanupResponse switchSnapshotCleanup(RpcController controller, SetSnapshotCleanupRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'switchSnapshotCleanup'");
+    }
+
+    @Override
+    public IsSnapshotCleanupEnabledResponse isSnapshotCleanupEnabled(RpcController controller,
+            IsSnapshotCleanupEnabledRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isSnapshotCleanupEnabled'");
+    }
+
+    @Override
+    public ExecProcedureResponse execProcedure(RpcController controller, ExecProcedureRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'execProcedure'");
+    }
+
+    @Override
+    public ExecProcedureResponse execProcedureWithRet(RpcController controller, ExecProcedureRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'execProcedureWithRet'");
+    }
+
+    @Override
+    public IsProcedureDoneResponse isProcedureDone(RpcController controller, IsProcedureDoneRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isProcedureDone'");
+    }
+
+    @Override
+    public ModifyNamespaceResponse modifyNamespace(RpcController controller, ModifyNamespaceRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'modifyNamespace'");
+    }
+
+    @Override
+    public CreateNamespaceResponse createNamespace(RpcController controller, CreateNamespaceRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'createNamespace'");
+    }
+
+    @Override
+    public DeleteNamespaceResponse deleteNamespace(RpcController controller, DeleteNamespaceRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'deleteNamespace'");
+    }
+
+    @Override
+    public GetNamespaceDescriptorResponse getNamespaceDescriptor(RpcController controller,
+            GetNamespaceDescriptorRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getNamespaceDescriptor'");
+    }
+
+    @Override
+    public ListNamespaceDescriptorsResponse listNamespaceDescriptors(RpcController controller,
+            ListNamespaceDescriptorsRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'listNamespaceDescriptors'");
+    }
+
+    @Override
+    public ListTableDescriptorsByNamespaceResponse listTableDescriptorsByNamespace(RpcController controller,
+            ListTableDescriptorsByNamespaceRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'listTableDescriptorsByNamespace'");
+    }
+
+    @Override
+    public ListTableNamesByNamespaceResponse listTableNamesByNamespace(RpcController controller,
+            ListTableNamesByNamespaceRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'listTableNamesByNamespace'");
+    }
+
+    @Override
+    public GetTableStateResponse getTableState(RpcController controller, GetTableStateRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getTableState'");
+    }
+
+    @Override
+    public MajorCompactionTimestampResponse getLastMajorCompactionTimestamp(RpcController controller,
+            MajorCompactionTimestampRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getLastMajorCompactionTimestamp'");
+    }
+
+    @Override
+    public MajorCompactionTimestampResponse getLastMajorCompactionTimestampForRegion(RpcController controller,
+            MajorCompactionTimestampForRegionRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getLastMajorCompactionTimestampForRegion'");
+    }
+
+    @Override
+    public GetProcedureResultResponse getProcedureResult(RpcController controller, GetProcedureResultRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getProcedureResult'");
+    }
+
+    @Override
+    public SecurityCapabilitiesResponse getSecurityCapabilities(RpcController controller,
+            SecurityCapabilitiesRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getSecurityCapabilities'");
+    }
+
+    @Override
+    public AbortProcedureResponse abortProcedure(RpcController controller, AbortProcedureRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'abortProcedure'");
+    }
+
+    @Override
+    public GetProceduresResponse getProcedures(RpcController controller, GetProceduresRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getProcedures'");
+    }
+
+    @Override
+    public GetLocksResponse getLocks(RpcController controller, GetLocksRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getLocks'");
+    }
+
+    @Override
+    public AddReplicationPeerResponse addReplicationPeer(RpcController controller, AddReplicationPeerRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'addReplicationPeer'");
+    }
+
+    @Override
+    public RemoveReplicationPeerResponse removeReplicationPeer(RpcController controller,
+            RemoveReplicationPeerRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'removeReplicationPeer'");
+    }
+
+    @Override
+    public EnableReplicationPeerResponse enableReplicationPeer(RpcController controller,
+            EnableReplicationPeerRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'enableReplicationPeer'");
+    }
+
+    @Override
+    public DisableReplicationPeerResponse disableReplicationPeer(RpcController controller,
+            DisableReplicationPeerRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'disableReplicationPeer'");
+    }
+
+    @Override
+    public UpdateReplicationPeerConfigResponse updateReplicationPeerConfig(RpcController controller,
+            UpdateReplicationPeerConfigRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'updateReplicationPeerConfig'");
+    }
+
+    @Override
+    public ListReplicationPeersResponse listReplicationPeers(RpcController controller,
+            ListReplicationPeersRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'listReplicationPeers'");
+    }
+
+    @Override
+    public ListDecommissionedRegionServersResponse listDecommissionedRegionServers(RpcController controller,
+            ListDecommissionedRegionServersRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'listDecommissionedRegionServers'");
+    }
+
+    @Override
+    public DecommissionRegionServersResponse decommissionRegionServers(RpcController controller,
+            DecommissionRegionServersRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'decommissionRegionServers'");
+    }
+
+    @Override
+    public RecommissionRegionServerResponse recommissionRegionServer(RpcController controller,
+            RecommissionRegionServerRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'recommissionRegionServer'");
+    }
+
+    @Override
+    public ClearDeadServersResponse clearDeadServers(RpcController controller, ClearDeadServersRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'clearDeadServers'");
+    }
+
+    @Override
+    public GetQuotaStatesResponse getQuotaStates(RpcController arg0, GetQuotaStatesRequest arg1)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getQuotaStates'");
+    }
+
+    @Override
+    public GetReplicationPeerConfigResponse getReplicationPeerConfig(RpcController controller,
+            GetReplicationPeerConfigRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getReplicationPeerConfig'");
+    }
+
+    @Override
+    public GetSpaceQuotaRegionSizesResponse getSpaceQuotaRegionSizes(RpcController arg0,
+            GetSpaceQuotaRegionSizesRequest arg1) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getSpaceQuotaRegionSizes'");
+    }
+
+    @Override
+    public IsRpcThrottleEnabledResponse isRpcThrottleEnabled(RpcController controller,
+            IsRpcThrottleEnabledRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isRpcThrottleEnabled'");
+    }
+
+    @Override
+    public GrantResponse grant(RpcController controller, GrantRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'grant'");
+    }
+
+    @Override
+    public RevokeResponse revoke(RpcController controller, RevokeRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'revoke'");
+    }
+
+    @Override
+    public GetUserPermissionsResponse getUserPermissions(RpcController controller, GetUserPermissionsRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getUserPermissions'");
+    }
+
+    @Override
+    public HasUserPermissionsResponse hasUserPermissions(RpcController controller, HasUserPermissionsRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'hasUserPermissions'");
+    }
+
+    @Override
+    public ListNamespacesResponse listNamespaces(RpcController controller, ListNamespacesRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'listNamespaces'");
+    }
+
+    @Override
+    public ModifyTableStoreFileTrackerResponse modifyTableStoreFileTracker(RpcController controller,
+            ModifyTableStoreFileTrackerRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'modifyTableStoreFileTracker'");
+    }
+
+    @Override
+    public SetQuotaResponse setQuota(RpcController arg0, SetQuotaRequest arg1) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'setQuota'");
+    }
+
+    @Override
+    public SwitchExceedThrottleQuotaResponse switchExceedThrottleQuota(RpcController arg0,
+            SwitchExceedThrottleQuotaRequest arg1) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'switchExceedThrottleQuota'");
+    }
+
+    @Override
+    public SwitchRpcThrottleResponse switchRpcThrottle(RpcController controller, SwitchRpcThrottleRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'switchRpcThrottle'");
+    }
+
+    @Override
+    public ModifyColumnStoreFileTrackerResponse modifyColumnStoreFileTracker(RpcController controller,
+            ModifyColumnStoreFileTrackerRequest request) throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'modifyColumnStoreFileTracker'");
+    }
+
+    @Override
+    public FlushMasterStoreResponse flushMasterStore(RpcController controller, FlushMasterStoreRequest request)
+            throws ServiceException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'flushMasterStore'");
     }
 }

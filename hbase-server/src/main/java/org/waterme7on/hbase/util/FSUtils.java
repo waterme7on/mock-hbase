@@ -6,6 +6,9 @@ import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -16,6 +19,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.client.RegionInfoBuilder;
 import org.apache.hadoop.hbase.exceptions.DeserializationException;
@@ -242,6 +246,113 @@ public class FSUtils {
                     throw e;
                 }
             }
+        }
+    }
+
+    public static List<Path> getTableDirs(final FileSystem fs, final Path rootdir)
+            throws IOException {
+        List<Path> tableDirs = new ArrayList<>();
+        Path baseNamespaceDir = new Path(rootdir, HConstants.BASE_NAMESPACE_DIR);
+        if (fs.exists(baseNamespaceDir)) {
+            for (FileStatus status : fs.globStatus(new Path(baseNamespaceDir, "*"))) {
+                tableDirs.addAll(FSUtils.getLocalTableDirs(fs, status.getPath()));
+            }
+        }
+        return tableDirs;
+    }
+
+    /**
+     * @return All the table directories under <code>rootdir</code>. Ignore non
+     *         table hbase folders
+     *         such as .logs, .oldlogs, .corrupt folders.
+     */
+    public static List<Path> getLocalTableDirs(final FileSystem fs, final Path rootdir)
+            throws IOException {
+        // presumes any directory under hbase.rootdir is a table
+        FileStatus[] dirs = fs.listStatus(rootdir, new UserTableDirFilter(fs));
+        List<Path> tabledirs = new ArrayList<>(dirs.length);
+        for (FileStatus dir : dirs) {
+            tabledirs.add(dir.getPath());
+        }
+        return tabledirs;
+    }
+
+    /**
+     * Directory filter that doesn't include any of the directories in the specified
+     * blacklist
+     */
+    public static class BlackListDirFilter extends AbstractFileStatusFilter {
+        private final FileSystem fs;
+        private List<String> blacklist;
+
+        /**
+         * Create a filter on the givem filesystem with the specified blacklist
+         * 
+         * @param fs                     filesystem to filter
+         * @param directoryNameBlackList list of the names of the directories to filter.
+         *                               If
+         *                               <tt>null</tt>, all directories are returned
+         */
+        @SuppressWarnings("unchecked")
+        public BlackListDirFilter(final FileSystem fs, final List<String> directoryNameBlackList) {
+            this.fs = fs;
+            blacklist = (List<String>) (directoryNameBlackList == null
+                    ? Collections.emptyList()
+                    : directoryNameBlackList);
+        }
+
+        @Override
+        protected boolean accept(Path p, Boolean isDir) {
+            if (!isValidName(p.getName())) {
+                return false;
+            }
+
+            try {
+                return isDirectory(fs, isDir, p);
+            } catch (IOException e) {
+                LOG.warn("An error occurred while verifying if [{}] is a valid directory."
+                        + " Returning 'not valid' and continuing.", p, e);
+                return false;
+            }
+        }
+
+        protected boolean isValidName(final String name) {
+            return !blacklist.contains(name);
+        }
+    }
+
+    /**
+     * A {@link PathFilter} that only allows directories.
+     */
+    public static class DirFilter extends BlackListDirFilter {
+
+        public DirFilter(FileSystem fs) {
+            super(fs, null);
+        }
+    }
+
+    /**
+     * A {@link PathFilter} that returns usertable directories. To get all
+     * directories use the
+     * {@link BlackListDirFilter} with a <tt>null</tt> blacklist
+     */
+    public static class UserTableDirFilter extends BlackListDirFilter {
+        public UserTableDirFilter(FileSystem fs) {
+            super(fs, HConstants.HBASE_NON_TABLE_DIRS);
+        }
+
+        @Override
+        protected boolean isValidName(final String name) {
+            if (!super.isValidName(name))
+                return false;
+
+            try {
+                TableName.isLegalTableQualifierName(Bytes.toBytes(name));
+            } catch (IllegalArgumentException e) {
+                LOG.info("Invalid table name: {}", name);
+                return false;
+            }
+            return true;
         }
     }
 

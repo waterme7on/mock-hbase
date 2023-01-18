@@ -14,6 +14,7 @@ import org.apache.hadoop.hbase.conf.ConfigurationObserver;
 import org.apache.hadoop.hbase.io.ByteBuffAllocator;
 import org.apache.hadoop.hbase.ipc.HBaseRpcController;
 import org.apache.hadoop.hbase.ipc.HBaseRpcControllerImpl;
+import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
 import org.waterme7on.hbase.Server;
@@ -284,6 +285,36 @@ public abstract class RpcServer implements RpcServerInterface, ConfigurationObse
             LOG.error("Unexpected throwable object ", e);
             throw new IOException(e.getMessage(), e);
         }
+    }
+
+    public static boolean isInRpcCallContext() {
+        return CurCall.get() != null;
+    }
+
+    /**
+     * Returns the username for any user associated with the current RPC request or
+     * not present if no
+     * user is set.
+     */
+    public static Optional<String> getRequestUserName() {
+        return getRequestUser().map(User::getShortName);
+    }
+
+    /** Returns Address of remote client if a request is ongoing, else null */
+    public static Optional<InetAddress> getRemoteAddress() {
+        return getCurrentCall().map(RpcCall::getRemoteAddress);
+    }
+
+    /**
+     * Returns the user credentials associated with the current RPC request or not
+     * present if no
+     * credentials were provided.
+     * 
+     * @return A User
+     */
+    public static Optional<User> getRequestUser() {
+        Optional<RpcCall> ctx = getCurrentCall();
+        return ctx.isPresent() ? ctx.get().getRequestUser() : Optional.empty();
     }
 
 }

@@ -19,8 +19,8 @@ import org.waterme7on.hbase.regionserver.HRegionServer;
 import org.waterme7on.hbase.regionserver.SimpleRpcSchedulerFactory;
 import org.waterme7on.hbase.HBaseCommonTestingUtility;
 import org.waterme7on.hbase.Server;
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
 
 import com.google.common.collect.ImmutableList;
 

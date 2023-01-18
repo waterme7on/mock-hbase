@@ -118,24 +118,31 @@ case $startStop in
     echo $hbase_pid > ${HBASE_PID}
     wait $hbase_pid
   ;;
+
+(foreground_stop)
+    echo "`date` Stopping $command on `hostname`"
+    nice -n $HBASE_NICENESS "$HBASE_HOME"/bin/hbase.sh $command "$@" stop < /dev/null > /dev/null 2>&1 &
+    hbase_pid=$!
+    wait $hbase_pid
+  ;;
+
 (stop)
-    rm -f "$HBASE_AUTOSTART_FILE"
+    echo "`date` Running $command" >> $HBASE_LOGLOG
+    echo stopping $command
     if [ -f $HBASE_PID ]; then
-      pidToKill=`cat $HBASE_PID`
-      # kill -0 == see if the PID exists
-      if kill -0 $pidToKill > /dev/null 2>&1; then
-        echo -n stopping $command
-        echo "`date` Terminating $command" >> $HBASE_LOGLOG
-        kill $pidToKill > /dev/null 2>&1
-        waitForProcessEnd $pidToKill $command
-      else
-        retval=$?
-        echo no $command to stop because kill -0 of pid $pidToKill failed with status $retval
-      fi
+      $thiscmd foreground_stop $command $args < /dev/null > /dev/null 2>&1  &
+      stop_pid=$!
+      echo "waiting for $command to stop..."
+      wait $stop_pid
+      echo "wtopped $command"
     else
       echo no $command to stop because no pid file $HBASE_PID
     fi
     rm -f $HBASE_PID
+  ;;
+(restart)
+    $thiscmd stop $command $args 
+    $thiscmd start $command $args 
   ;;
 (*)
     show_usage

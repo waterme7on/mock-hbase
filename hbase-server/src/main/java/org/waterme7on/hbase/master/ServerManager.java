@@ -2,6 +2,7 @@ package org.waterme7on.hbase.master;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +13,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.hadoop.hbase.ServerMetrics;
 import org.apache.hadoop.hbase.ServerMetricsBuilder;
 import org.apache.hadoop.hbase.ServerName;
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -177,5 +178,12 @@ public class ServerManager {
         synchronized (this.onlineServers) {
             return Collections.unmodifiableMap(this.onlineServers);
         }
+    }
+
+    /** Returns A copy of the internal list of online servers. */
+    public List<ServerName> getOnlineServersList() {
+        // TODO: optimize the load balancer call so we don't need to make a new list
+        // TODO: FIX. THIS IS POPULAR CALL.
+        return new ArrayList<>(this.onlineServers.keySet());
     }
 }

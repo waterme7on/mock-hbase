@@ -1,18 +1,23 @@
 package org.waterme7on.hbase.master;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.CommandLine;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.GnuParser;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.Options;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.MasterNotRunningException;
+import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
+import org.apache.hadoop.hbase.ipc.RpcClient;
+import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
+import org.waterme7on.hbase.ipc.RpcClientFactory;
 import io.opentelemetry.context.Scope;
 import org.apache.hbase.thirdparty.org.apache.commons.cli.ParseException;
 import org.slf4j.Logger;
@@ -23,6 +28,7 @@ import org.waterme7on.hbase.regionserver.HRegionServer;
 import org.waterme7on.hbase.util.ClusterUtil;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.List;
 
 public class HMasterCommandLine extends ServerCommandLine {
@@ -74,8 +80,20 @@ public class HMasterCommandLine extends ServerCommandLine {
         Configuration conf = getConf();
         // Don't try more than once
         conf.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 0);
-        try (Connection connection = ConnectionFactory.createConnection(conf)) {
-            try (Admin admin = connection.getAdmin()) {
+        try {
+            Connection connection = ConnectionFactory.createConnection(conf);
+            // String clusterId = connection.getClusterId();
+            // ServerName sn = connection.getAdmin().getClusterMetrics().getMasterName();
+            // RpcClient rpcClient = RpcClientFactory.createClient(conf, clusterId,
+            // new InetSocketAddress("127.0.0.1", 0),
+            // null);
+            // BlockingRpcChannel channel = rpcClient.createBlockingRpcChannel(sn,
+            // User.getCurrent(), 10000);
+            // LOG.debug("clusterId:" + clusterId);
+            // LOG.debug("sn:" + sn.toString());
+            try {
+                Admin admin = connection.getAdmin();
+                LOG.debug("eeee:" + admin.toString());
                 admin.shutdown();
             } catch (Throwable t) {
                 LOG.error("Failed to stop master", t);

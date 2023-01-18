@@ -465,8 +465,8 @@ public abstract class AbstractRpcClient<T extends RpcConnection> implements RpcC
                 cs.setConcurrentCallsPerServer(count);
                 T connection = getConnection(remoteId);
                 LOG.debug("(callMethod) Call: {}", call.toString());
-                LOG.debug("(callMethod) Connection: {}, {}", connection.toString(),
-                        connection.getClass());
+                // LOG.debug("(callMethod) Connection: {}, {}",
+                // connection.toString(),connection.getClass());
                 connection.sendRequest(call, hrc);
             } catch (Exception e) {
                 call.setException(toIOException(e));
@@ -633,8 +633,9 @@ public abstract class AbstractRpcClient<T extends RpcConnection> implements RpcC
         @Override
         public Message callBlockingMethod(Descriptors.MethodDescriptor md, RpcController controller,
                 Message param, Message returnType) throws ServiceException {
-            LOG.debug("(callBlockingMethod) Method: {}, param: {}, returnType: {}", md.getName(),
-                    param, returnType);
+            // LOG.debug("(callBlockingMethod) Method: {}, param: {}, returnType: {}",
+            // md.getName(),
+            // param, returnType);
             return rpcClient.callBlockingMethod(md, configureRpcController(controller), param, returnType,
                     ticket, addr);
         }

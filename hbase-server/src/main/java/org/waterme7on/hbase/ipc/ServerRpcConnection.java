@@ -280,7 +280,8 @@ public abstract class ServerRpcConnection implements Closeable {
             cis.enableAliasing(true);
             this.connectionHeader = ConnectionHeader.parseFrom(cis);
         }
-        LOG.debug("ServerRpcConnection.processConnectionHeader {}", this.connectionHeader);
+        // LOG.debug("ServerRpcConnection.processConnectionHeader {}",
+        // this.connectionHeader);
         String serviceName = connectionHeader.getServiceName();
         if (serviceName == null)
             throw new UnknownServiceException("Empty service name");

@@ -1,5 +1,8 @@
 package org.waterme7on.hbase.master;
 
+import java.io.IOException;
+
+import org.apache.hadoop.hbase.ClusterMetrics;
 import org.waterme7on.hbase.Server;
 
 public interface MasterServices extends Server {
@@ -9,4 +12,8 @@ public interface MasterServices extends Server {
     MasterWalManager getMasterWalManager();
 
     ServerManager getServerManager();
+
+    String getClientIdAuditPrefix();
+
+    ClusterMetrics getClusterMetrics() throws IOException;
 }

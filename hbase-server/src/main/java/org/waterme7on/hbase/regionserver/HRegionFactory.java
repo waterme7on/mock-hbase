@@ -17,10 +17,13 @@ public final class HRegionFactory {
 
     // default to flush every 15 minutes, for safety
     private static final long DEFAULT_FLUSH_INTERVAL_MS = TimeUnit.MINUTES.toMillis(15);
+
     public static HRegion create(Server server) throws IOException {
         Configuration conf = server.getConfiguration();
-        long flushSize = conf.getLong(FLUSH_SIZE_KEY, DEFAULT_FLUSH_SIZE);
-        long flushIntervalMs = conf.getLong(FLUSH_INTERVAL_MS_KEY, DEFAULT_FLUSH_INTERVAL_MS);
-        return new HRegion(flushSize, flushIntervalMs);
+        // long flushSize = conf.getLong(FLUSH_SIZE_KEY, DEFAULT_FLUSH_SIZE);
+        // long flushIntervalMs = conf.getLong(FLUSH_INTERVAL_MS_KEY,
+        // DEFAULT_FLUSH_INTERVAL_MS);
+        // return new HRegion(flushSize, flushIntervalMs);
+        return new HRegion(conf);
     }
 }

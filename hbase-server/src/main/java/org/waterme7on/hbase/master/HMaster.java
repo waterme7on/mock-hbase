@@ -5,13 +5,16 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterId;
+import org.apache.hadoop.hbase.ClusterMetrics;
+import org.apache.hadoop.hbase.ClusterMetricsBuilder;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.log.HBaseMarkers;
+import org.apache.hadoop.hbase.ServerMetrics;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionServerInfo;
-import org.waterme7on.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService.BlockingInterface;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService.BlockingInterface;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Addressing;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
@@ -34,6 +37,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
@@ -328,6 +334,154 @@ public class HMaster extends HRegionServer implements MasterServices {
         return new ServerManager(master, storage);
     }
 
+    /** Returns cluster status */
+    public ClusterMetrics getClusterMetrics() throws IOException {
+        return getClusterMetrics(EnumSet.allOf(ClusterMetrics.Option.class));
+    }
+
+    public ClusterMetrics getClusterMetrics(EnumSet<ClusterMetrics.Option> options) throws IOException {
+        // if (cpHost != null) {
+        // cpHost.preGetClusterMetrics();
+        // }
+        ClusterMetrics status = getClusterMetricsWithoutCoprocessor(options);
+        // if (cpHost != null) {
+        // cpHost.postGetClusterMetrics(status);
+        // }
+        return status;
+    }
+
+    public ClusterMetrics getClusterMetricsWithoutCoprocessor(EnumSet<ClusterMetrics.Option> options)
+            throws InterruptedIOException {
+        ClusterMetricsBuilder builder = ClusterMetricsBuilder.newBuilder();
+        // given that hbase1 can't submit the request with Option,
+        // we return all information to client if the list of Option is empty.
+        if (options.isEmpty()) {
+            options = EnumSet.allOf(ClusterMetrics.Option.class);
+        }
+        for (ClusterMetrics.Option opt : options) {
+            switch (opt) {
+                case HBASE_VERSION:
+                    builder.setHBaseVersion(VersionInfo.getVersion());
+                    break;
+                case CLUSTER_ID:
+                    builder.setClusterId(getClusterId());
+                    break;
+                case MASTER:
+                    builder.setMasterName(getServerName());
+                    break;
+                case BACKUP_MASTERS:
+                    // builder.setBackerMasterNames(getBackupMasters());
+                    break;
+                case TASKS: {
+                    // // Master tasks
+                    // builder.setMasterTasks(TaskMonitor.get().getTasks().stream()
+                    // .map(task ->
+                    // ServerTaskBuilder.newBuilder().setDescription(task.getDescription())
+                    // .setStatus(task.getStatus())
+                    // .setState(ServerTask.State.valueOf(task.getState().name()))
+                    // .setStartTime(task.getStartTime()).setCompletionTime(task.getCompletionTimestamp())
+                    // .build())
+                    // .collect(Collectors.toList()));
+                    // // TASKS is also synonymous with LIVE_SERVERS for now because task
+                    // information
+                    // // for
+                    // // regionservers is carried in ServerLoad.
+                    // // Add entries to serverMetricsMap for all live servers, if we haven't
+                    // already
+                    // // done so
+                    // if (serverMetricsMap == null) {
+                    // serverMetricsMap = getOnlineServers();
+                    // }
+                    break;
+                }
+                case LIVE_SERVERS: {
+                    // Add entries to serverMetricsMap for all live servers, if we haven't already
+                    // done so
+                    // if (serverMetricsMap == null) {
+                    // serverMetricsMap = getOnlineServers();
+                    // }
+                    builder.setLiveServerMetrics(getOnlineServers());
+                    break;
+                }
+                case DEAD_SERVERS: {
+                    // if (serverManager != null) {
+                    // builder.setDeadServerNames(
+                    // new ArrayList<>(serverManager.getDeadServers().copyServerNames()));
+                    // }
+                    break;
+                }
+                case UNKNOWN_SERVERS: {
+                    // if (serverManager != null) {
+                    // builder.setUnknownServerNames(getUnknownServers());
+                    // }
+                    break;
+                }
+                case MASTER_COPROCESSORS: {
+                    // if (cpHost != null) {
+                    // builder.setMasterCoprocessorNames(Arrays.asList(getMasterCoprocessors()));
+                    // }
+                    break;
+                }
+                case REGIONS_IN_TRANSITION: {
+                    // if (assignmentManager != null) {
+                    // builder.setRegionsInTransition(
+                    // assignmentManager.getRegionStates().getRegionsStateInTransition());
+                    // }
+                    break;
+                }
+                case BALANCER_ON: {
+                    // if (loadBalancerTracker != null) {
+                    // builder.setBalancerOn(loadBalancerTracker.isBalancerOn());
+                    // }
+                    break;
+                }
+                case MASTER_INFO_PORT: {
+                    // if (infoServer != null) {
+                    // builder.setMasterInfoPort(infoServer.getPort());
+                    // }
+                    break;
+                }
+                case SERVERS_NAME: {
+                    if (serverManager != null) {
+                        builder.setServerNames(serverManager.getOnlineServersList());
+                    }
+                    break;
+                }
+                case TABLE_TO_REGIONS_COUNT: {
+                    // if (isActiveMaster() && isInitialized() && assignmentManager != null) {
+                    // try {
+                    // Map<TableName, RegionStatesCount> tableRegionStatesCountMap = new
+                    // HashMap<>();
+                    // Map<String, TableDescriptor> tableDescriptorMap =
+                    // getTableDescriptors().getAll();
+                    // for (TableDescriptor tableDescriptor : tableDescriptorMap.values()) {
+                    // TableName tableName = tableDescriptor.getTableName();
+                    // RegionStatesCount regionStatesCount =
+                    // assignmentManager.getRegionStatesCount(tableName);
+                    // tableRegionStatesCountMap.put(tableName, regionStatesCount);
+                    // }
+                    // builder.setTableRegionStatesCount(tableRegionStatesCountMap);
+                    // } catch (IOException e) {
+                    // LOG.error("Error while populating TABLE_TO_REGIONS_COUNT for Cluster
+                    // Metrics..", e);
+                    // }
+                    // }
+                    break;
+                }
+            }
+        }
+        return builder.build();
+    }
+
+    private Map<ServerName, ServerMetrics> getOnlineServers() {
+        if (serverManager != null) {
+            final Map<ServerName, ServerMetrics> map = new HashMap<>();
+            serverManager.getOnlineServers().entrySet().forEach(e -> map.put(e.getKey(), e.getValue()));
+            return map;
+        }
+        return null;
+    }
+
     public void setInitialized(boolean isInitialized) {
         // procedureExecutor.getEnvironment().setEventReady(initialized, isInitialized);
         // TODO
@@ -341,11 +495,16 @@ public class HMaster extends HRegionServer implements MasterServices {
 
     @Override
     public void abort(String reason, Throwable cause) {
-    }
+        if (!setAbortRequested() || isStopped()) {
+            LOG.debug("Abort called but aborted={}, stopped={}", isAborted(), isStopped());
+            return;
+        }
 
-    @Override
-    public boolean isAborted() {
-        return false;
+        try {
+            stopMaster();
+        } catch (IOException e) {
+            LOG.error("Exception occurred while stopping master", e);
+        }
     }
 
     @Override
@@ -404,6 +563,15 @@ public class HMaster extends HRegionServer implements MasterServices {
         }
     }
 
+    /**
+     * Returns Client info for use as prefix on an audit log string; who did an
+     * action
+     */
+    public String getClientIdAuditPrefix() {
+        return "Client=" + RpcServer.getRequestUserName().orElse(null) + "/"
+                + RpcServer.getRemoteAddress().orElse(null);
+    }
+
     /** Returns Get remote side's InetAddress */
     InetAddress getRemoteInetAddress(final int port, final long serverStartCode)
             throws UnknownHostException {
@@ -443,12 +611,20 @@ public class HMaster extends HRegionServer implements MasterServices {
         }
     }
 
+    public String getClusterId() {
+        return clusterId;
+    }
+
     /**
      * @see org.waterme7on.hbase.master.HMasterCommandLine
      */
     public static void main(String[] args) {
         LOG.info("STARTING service " + HMaster.class.getSimpleName());
-        new HMasterCommandLine(HMaster.class).doMain(args);
+        if (args.length == 0) {
+            new HMasterCommandLine(HMaster.class).doMain(new String[] { "start" });
+        } else {
+            new HMasterCommandLine(HMaster.class).doMain(args);
+        }
     }
 
 }

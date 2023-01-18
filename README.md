@@ -25,7 +25,7 @@
 
 simply run:
 ```
-clear && mvn install -DskipTests && ./bin/hbase-daemon.sh start master
+clear && mvn install -DskipTests && ./bin/hbase-daemon.sh restart master
 ```
 
 run standalone zookeeper:
