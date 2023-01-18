@@ -193,7 +193,7 @@ public class EncodedDataBlock {
    * @param length      Length to be compressed.
    * @return Size of compressed data in bytes.
    */
-  @edu.umd.cs.findbugs.annotations.SuppressWarnings(value = "NP_NULL_ON_SOME_PATH_EXCEPTION", justification = "No sure what findbugs wants but looks to me like no NPE")
+
   public static int getCompressedSize(Algorithm algo, Compressor compressor, byte[] inputBuffer,
       int offset, int length) throws IOException {
 

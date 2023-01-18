@@ -30,7 +30,6 @@ public final class CryptoCipherProvider implements CipherProvider {
 
   private static CryptoCipherProvider instance;
 
-  @edu.umd.cs.findbugs.annotations.SuppressWarnings(value = "MS_EXPOSE_REP", justification = "singleton pattern")
   public static CryptoCipherProvider getInstance() {
     if (instance != null) {
       return instance;
