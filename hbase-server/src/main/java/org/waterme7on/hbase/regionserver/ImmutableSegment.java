@@ -5,7 +5,7 @@ import java.util.List;
 
 import org.apache.hadoop.hbase.regionserver.CellSet;
 import org.apache.hadoop.hbase.regionserver.KeyValueScanner;
-import org.waterme7on.hbase.CellComparator;
+import org.apache.hadoop.hbase.CellComparator;
 import org.waterme7on.hbase.util.ClassSize;
 
 /**

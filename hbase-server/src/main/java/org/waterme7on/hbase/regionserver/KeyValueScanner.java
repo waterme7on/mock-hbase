@@ -3,8 +3,8 @@ package org.waterme7on.hbase.regionserver;
 import java.io.Closeable;
 import java.io.IOException;
 import org.apache.hadoop.fs.Path;
-import org.waterme7on.hbase.Cell;
-import org.waterme7on.hbase.KeyValue;
+import org.apache.hadoop.hbase.Cell;
+import org.waterme7on.hbase.WKeyValue;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.yetus.audience.InterfaceAudience;
 
@@ -23,7 +23,7 @@ public interface KeyValueScanner extends Shipper, Closeable {
      * irrelevant because this
      * is always compared by reference.
      */
-    public static final Cell NO_NEXT_INDEXED_KEY = new KeyValue();
+    public static final Cell NO_NEXT_INDEXED_KEY = new WKeyValue();
 
     /**
      * Look at the next Cell in this scanner, but do not iterate scanner. NOTICE:

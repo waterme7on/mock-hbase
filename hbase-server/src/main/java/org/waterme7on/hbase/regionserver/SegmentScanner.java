@@ -5,16 +5,14 @@ import java.util.Iterator;
 import java.util.SortedSet;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.hadoop.fs.Path;
-import org.waterme7on.hbase.Cell;
-import org.waterme7on.hbase.PrivateCellUtil;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.PrivateCellUtil;
 import org.apache.hadoop.hbase.client.Scan;
 import org.waterme7on.hbase.regionserver.KeyValueScanner;
-import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * A scanner of a single memstore segment.
  */
-@InterfaceAudience.Private
 public class SegmentScanner implements KeyValueScanner {
 
     // the observed structure
@@ -114,7 +112,7 @@ public class SegmentScanner implements KeyValueScanner {
     }
 
     protected Iterator<org.apache.hadoop.hbase.Cell> getIterator(Cell cell) {
-        return segment.tailSet((org.waterme7on.hbase.Cell) cell).iterator();
+        return segment.tailSet((org.apache.hadoop.hbase.Cell) cell).iterator();
     }
 
     /**

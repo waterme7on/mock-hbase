@@ -4,7 +4,7 @@ import java.io.IOException;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.client.Scan;
-import org.waterme7on.hbase.Cell;
+import org.apache.hadoop.hbase.Cell;
 
 /**
  * A "non-lazy" scanner which always does a real seek operation. Most scanners
