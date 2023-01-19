@@ -3,7 +3,10 @@ package org.waterme7on.hbase.client;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.security.PrivilegedExceptionAction;
+import java.util.Map;
 import java.util.concurrent.*;
 
 import org.apache.hadoop.conf.Configuration;
@@ -17,14 +20,19 @@ import org.apache.hadoop.hbase.ipc.RpcControllerFactory;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.shaded.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.MasterProtos;
+import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.ConcurrentMapUtils;
+import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
+import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 import org.apache.hbase.thirdparty.com.google.common.base.Throwables;
 import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
 import org.apache.hbase.thirdparty.com.google.protobuf.ServiceException;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos;
 
 public class ConnectionImplementation implements ClusterConnection {
     private static final Logger LOG = LoggerFactory.getLogger(ConnectionImplementation.class);
@@ -38,6 +46,7 @@ public class ConnectionImplementation implements ClusterConnection {
 
     private final int metaReplicaCallTimeoutScanInMicroSecond;
     private final int numTries;
+    private final Object metaRegionLock = new Object();
 
     // Client rpc instance.
     private final RpcClient rpcClient;
@@ -58,6 +67,9 @@ public class ConnectionImplementation implements ClusterConnection {
     private final RpcRetryingCallerFactory rpcCallerFactory;
 
     private final RpcControllerFactory rpcControllerFactory;
+    private MasterAddressTracker masterAddressTracker;
+    private ZKWatcher zookeeper;
+
     /**
      * constructor
      * 
@@ -65,6 +77,10 @@ public class ConnectionImplementation implements ClusterConnection {
      */
     ConnectionImplementation(Configuration conf, ExecutorService pool, User user) throws IOException {
         this(conf, pool, user, null);
+        this.zookeeper = new ZKWatcher(conf, "Client", this,
+                false);
+        masterAddressTracker = new MasterAddressTracker(zookeeper, this);
+        masterAddressTracker.start();
     }
 
     /**
@@ -75,13 +91,17 @@ public class ConnectionImplementation implements ClusterConnection {
             ConnectionRegistry registry) throws IOException {
         this.conf = conf;
         this.user = user;
+
         this.closed = false;
         this.batchPool = (ThreadPoolExecutor) pool;
         this.registry = registry;
+        this.zookeeper = new ZKWatcher(conf, "Client", this,
+                false);
         this.connectionConfig = new ConnectionConfiguration(conf);
         this.metaReplicaCallTimeoutScanInMicroSecond = connectionConfig.getMetaReplicaCallTimeoutMicroSecondScan();
-        this.rpcTimeout =
-                conf.getInt(HConstants.HBASE_RPC_TIMEOUT_KEY, HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
+        this.rpcTimeout = conf.getInt(HConstants.HBASE_RPC_TIMEOUT_KEY, HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
+        masterAddressTracker = new MasterAddressTracker(zookeeper, this);
+        masterAddressTracker.start();
 
         // how many times to try, one more than max *retry* time
         this.numTries = (connectionConfig.getRetriesNumber());
@@ -93,6 +113,7 @@ public class ConnectionImplementation implements ClusterConnection {
     }
 
     protected String clusterId = null;
+
     protected void retrieveClusterId() {
         if (clusterId != null) {
             return;
@@ -107,6 +128,7 @@ public class ConnectionImplementation implements ClusterConnection {
             LOG.debug("clusterid came back null, using default " + clusterId);
         }
     }
+
     public ConnectionConfiguration getConnectionConfiguration() {
         return connectionConfig;
     }
@@ -133,6 +155,10 @@ public class ConnectionImplementation implements ClusterConnection {
         return null;
     }
 
+    public org.waterme7on.hbase.client.HRegionLocator getLocator(TableName tableName) throws IOException {
+        return new org.waterme7on.hbase.client.HRegionLocator(tableName, this);
+    }
+
     @Override
     public void clearRegionLocationCache() {
         // TODO Auto-generated method stub
@@ -141,9 +167,33 @@ public class ConnectionImplementation implements ClusterConnection {
 
     @Override
     public Admin getAdmin() throws IOException {
-        // TODO Auto-generated method stub
         return null;
+        // return getAdmin(get(registry.getActiveMaster()));
     }
+
+    @Override
+    public AdminProtos.AdminService.BlockingInterface getMasterAdmin() throws IOException {
+        return getAdmin(get(registry.getActiveMaster()));
+    }
+
+    @Override
+    public AdminProtos.AdminService.BlockingInterface getAdmin(ServerName serverName) throws IOException {
+        String key = getStubKey(AdminProtos.AdminService.BlockingInterface.class.getName(), serverName);
+        return (AdminProtos.AdminService.BlockingInterface) computeIfAbsentEx(stubs, key, () -> {
+            BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(serverName, user, rpcTimeout);
+            return AdminProtos.AdminService.newBlockingStub(channel);
+        });
+    }
+
+    @Override
+    public ClientProtos.ClientService.BlockingInterface getClient(ServerName serverName) throws IOException {
+        String key = getStubKey(ClientProtos.ClientService.BlockingInterface.class.getName(), serverName);
+        return (ClientProtos.ClientService.BlockingInterface) computeIfAbsentEx(stubs, key, () -> {
+            BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(serverName, user, rpcTimeout);
+            return ClientProtos.ClientService.newBlockingStub(channel);
+        });
+    }
+
     @Override
     public void close() throws IOException {
         // TODO Auto-generated method stub
@@ -199,10 +249,38 @@ public class ConnectionImplementation implements ClusterConnection {
         return this.masterServiceState.stub;
     }
 
+    @Override
+    public RegionLocations locateRegion(TableName tableName, byte[] row, boolean useCache, boolean retry, int replicaId)
+            throws IOException {
+        if (tableName.equals(TableName.META_TABLE_NAME)) {
+            return locateMeta(tableName, useCache, replicaId);
+        } else {
+            // Region not in the cache - have to go to the meta RS
+            return locateRegionInMeta(tableName, row, useCache, retry, replicaId);
+        }
+
+    }
+
+    private RegionLocations locateMeta(final TableName tableName, boolean useCache, int replicaId)
+            throws IOException {
+        RegionLocations locations = null;
+        // only one thread should do the lookup.
+        synchronized (metaRegionLock) {
+            // Look up from zookeeper
+            locations = get(this.registry.getMetaRegionLocations());
+        }
+        return locations;
+    }
+
+    private RegionLocations locateRegionInMeta(TableName tableName, byte[] row, boolean useCache,
+            boolean retry, int replicaId) throws IOException {
+        // TODO
+        return null;
+    }
+
     private void resetMasterServiceState(final MasterServiceState mss) {
         mss.userCount++;
     }
-
 
     /**
      * State of the MasterService connection/setup.
@@ -257,8 +335,10 @@ public class ConnectionImplementation implements ClusterConnection {
         }
 
         /**
-         * Create a stub. Try once only. It is not typed because there is no common type to protobuf
+         * Create a stub. Try once only. It is not typed because there is no common type
+         * to protobuf
          * services nor their interfaces. Let the caller do appropriate casting.
+         * 
          * @return A stub for master services.
          */
         private MasterProtos.MasterService.BlockingInterface makeStubNoRetries()
@@ -271,8 +351,8 @@ public class ConnectionImplementation implements ClusterConnection {
             }
             // Use the security info interface name as our stub key
             String key = getStubKey(MasterProtos.MasterService.getDescriptor().getName(), sn);
-            MasterProtos.MasterService.BlockingInterface stub =
-                    (MasterProtos.MasterService.BlockingInterface) computeIfAbsentEx(stubs, key, () -> {
+            MasterProtos.MasterService.BlockingInterface stub = (MasterProtos.MasterService.BlockingInterface) computeIfAbsentEx(
+                    stubs, key, () -> {
                         BlockingRpcChannel channel = rpcClient.createBlockingRpcChannel(sn, user, rpcTimeout);
                         return MasterProtos.MasterService.newBlockingStub(channel);
                     });
@@ -282,8 +362,10 @@ public class ConnectionImplementation implements ClusterConnection {
 
         /**
          * Create a stub against the master. Retry if necessary.
+         * 
          * @return A stub to do <code>intf</code> against the master
-         * @throws org.apache.hadoop.hbase.MasterNotRunningException if master is not running
+         * @throws org.apache.hadoop.hbase.MasterNotRunningException if master is not
+         *                                                           running
          */
         MasterProtos.MasterService.BlockingInterface makeStub() throws IOException {
             // The lock must be at the beginning to prevent multiple master creations
@@ -305,7 +387,6 @@ public class ConnectionImplementation implements ClusterConnection {
             }
         }
     }
-
 
     private boolean isKeepAliveMasterConnectedAndRunning(MasterServiceState mss) {
         if (mss.getStub() == null) {
@@ -337,7 +418,6 @@ public class ConnectionImplementation implements ClusterConnection {
         }
     }
 
-
     /**
      * Get a unique key for the rpc stub to the given server.
      */
@@ -346,16 +426,61 @@ public class ConnectionImplementation implements ClusterConnection {
     }
 
     /**
-     * In HBASE-16648 we found that ConcurrentHashMap.get is much faster than computeIfAbsent if the
+     * In HBASE-16648 we found that ConcurrentHashMap.get is much faster than
+     * computeIfAbsent if the
      * value already exists. So here we copy the implementation of
-     * {@link ConcurrentMap#computeIfAbsent(Object, java.util.function.Function)}. It uses get and
-     * putIfAbsent to implement computeIfAbsent. And notice that the implementation does not guarantee
+     * {@link ConcurrentMap#computeIfAbsent(Object, java.util.function.Function)}.
+     * It uses get and
+     * putIfAbsent to implement computeIfAbsent. And notice that the implementation
+     * does not guarantee
      * that the supplier will only be executed once.
      */
     public static <K, V> V computeIfAbsentEx(ConcurrentMap<K, V> map, K key,
-                                             ConcurrentMapUtils.IOExceptionSupplier<V> supplier) throws IOException {
+            ConcurrentMapUtils.IOExceptionSupplier<V> supplier) throws IOException {
         V v, newValue;
         return ((v = map.get(key)) == null && (newValue = supplier.get()) != null
                 && (v = map.putIfAbsent(key, newValue)) == null) ? newValue : v;
+    }
+
+    public static Connection createConnection(Configuration conf) throws IOException {
+        return createConnection(conf, null);
+    }
+
+    public static Connection createConnection(Configuration conf, ExecutorService pool) throws IOException {
+        return TraceUtil.trace(() -> {
+            String className = ConnectionImplementation.class.getName();
+            Class<?> clazz;
+            try {
+                clazz = Class.forName(className);
+            } catch (ClassNotFoundException e) {
+                throw new IOException(e);
+            }
+            try {
+                // Default HCM#HCI is not accessible; make it so before invoking.
+                Constructor<?> constructor = clazz.getDeclaredConstructor(Configuration.class, ExecutorService.class,
+                        User.class);
+                constructor.setAccessible(true);
+                return User.getCurrent().runAs((PrivilegedExceptionAction<Connection>) () -> (Connection) constructor
+                        .newInstance(conf, pool, User.getCurrent()));
+            } catch (Exception e) {
+                throw new IOException(e);
+            }
+        }, (ConnectionImplementation.class.getSimpleName() + ".createConnection"));
+    }
+
+    @Override
+    public RegionLocations locateRegion(TableName tableName) throws IOException {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public TableMapProtos.TableLocationService.BlockingInterface getTableMapService() throws IOException {
+        ServerName master = masterAddressTracker.getMasterAddress();
+        String key = getStubKey(TableMapProtos.TableLocationService.BlockingInterface.class.getName(), master);
+        return (TableMapProtos.TableLocationService.BlockingInterface) computeIfAbsentEx(stubs, key, () -> {
+            BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(master, user, rpcTimeout);
+            return TableMapProtos.TableLocationService.newBlockingStub(channel);
+        });
     }
 }

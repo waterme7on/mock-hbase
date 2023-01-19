@@ -8,16 +8,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
-import org.apache.hadoop.hbase.ChoreService;
-import org.apache.hadoop.hbase.ClusterId;
-import org.apache.hadoop.hbase.ClusterMetrics;
-import org.apache.hadoop.hbase.ClusterMetricsBuilder;
-import org.apache.hadoop.hbase.CoordinatedStateManager;
-import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.MasterNotRunningException;
-import org.apache.hadoop.hbase.PleaseHoldException;
-import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.client.RegionInfoBuilder;
@@ -30,7 +21,6 @@ import org.apache.hadoop.hbase.master.RegionState;
 import org.apache.hadoop.hbase.master.assignment.RegionStateNode;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos;
 import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
-import org.apache.hadoop.hbase.ServerMetrics;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.AdminService;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionServerInfo;
@@ -45,10 +35,7 @@ import org.apache.hadoop.hbase.util.VersionInfo;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.waterme7on.hbase.regionserver.HRegion;
-import org.waterme7on.hbase.regionserver.HRegionFactory;
-import org.waterme7on.hbase.regionserver.HRegionServer;
-import org.waterme7on.hbase.regionserver.RSRpcServices;
+import org.waterme7on.hbase.regionserver.*;
 import org.waterme7on.hbase.util.FSTableDescriptors;
 import org.waterme7on.hbase.util.ModifyRegionUtils;
 
@@ -90,6 +77,8 @@ public class HMaster extends HRegionServer implements MasterServices {
     // file system manager for the master FS operations
     private MasterFileSystem fileSystemManager;
     private MasterWalManager walManager;
+
+    private MetaLocationSyncer metaLocationSyncer;
 
     // Manager and zk listener for master election
     private final ActiveMasterManager activeMasterManager;
@@ -316,6 +305,7 @@ public class HMaster extends HRegionServer implements MasterServices {
         // Print out state of hbase:meta on startup; helps debugging.
         if (!this.assignmentManager.regionStates.hasTableRegionStates(TableName.META_TABLE_NAME)) {
             this.assignmentManager.initMeta();
+            // ZKUtil.createAndWatch(zooKeeper, zooKeeper.getZNodePaths(), upData);
         }
         // start up all service threads.
         status.setStatus("Initializing master service threads");
@@ -350,6 +340,17 @@ public class HMaster extends HRegionServer implements MasterServices {
         } else {
             LOG.debug("cluster is already up");
         }
+        ZKWatcher clientZkWatcher = new ZKWatcher(conf,
+                getProcessName() + ":" + rpcServices.getSocketAddress().getPort() + "-clientZK", this,
+                false, true);
+
+        this.metaLocationSyncer = new MetaLocationSyncer(zooKeeper, clientZkWatcher, this);
+        this.metaLocationSyncer.start();
+
+    }
+
+    public MetaLocationSyncer getMetaLocationSyncer() {
+        return this.metaLocationSyncer;
     }
 
     public void shutdown() throws IOException {
@@ -754,9 +755,33 @@ public class HMaster extends HRegionServer implements MasterServices {
         throw new UnsupportedOperationException("Unimplemented method 'getTableStateManager'");
     }
 
+    private Map<TableName, RegionLocations> tableMap = new HashMap<>();
+
+    @Override
+    public void updateRegionLocation(TableName tableName, HRegionLocation loc) {
+        tableMap.put(tableName, new RegionLocations(loc));
+    }
+
+    @Override
+    public RegionLocations getRegionLocation(TableName tableName) {
+        return tableMap.get(tableName);
+    }
+
     @Override
     public LoadBalancer getLoadBalancer() {
         return this.balancer;
     }
 
+    @Override
+    public String toString() {
+        String sp = super.toString();
+        if (this.tableMap != null) {
+            sp += " Current Tables: {";
+            for (TableName tb : this.tableMap.keySet()) {
+                sp += tb.toString() + "-> " + this.tableMap.get(tb).toString() + ", ";
+            }
+            return sp + "}";
+        }
+        return sp;
+    }
 }

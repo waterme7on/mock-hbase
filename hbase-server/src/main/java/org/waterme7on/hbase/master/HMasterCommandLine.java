@@ -15,6 +15,7 @@ import org.apache.hadoop.hbase.ipc.RpcClient;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.waterme7on.hbase.client.ConnectionImplementation;
 import org.apache.hadoop.ipc.Client;
 
 import io.opentelemetry.api.trace.Span;
@@ -31,6 +32,7 @@ import org.waterme7on.hbase.util.ClusterUtil;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 
@@ -180,6 +182,18 @@ public class HMasterCommandLine extends ServerCommandLine {
         }
     }
 
+    private void put(Connection connection, List<String> args) throws IOException {
+        String tableName = args.get(1);
+        String rowKey = args.get(2);
+        String qualifer = args.get(3);
+        String value = args.get(4);
+
+        Put put = new Put(Bytes.toBytes(rowKey));
+        put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes(qualifer), 0, Bytes.toBytes(value));
+        Table t = connection.getTable(TableName.valueOf(tableName));
+        t.put(put);
+    }
+
     @Override
     public int run(String[] args) throws Exception {
         boolean shutDownCluster = false;
@@ -276,6 +290,7 @@ public class HMasterCommandLine extends ServerCommandLine {
         Scanner scanner = new Scanner(System.in);
         String inputCommand;
         Connection connection = ConnectionFactory.createConnection(conf);
+        Connection myConnection = ConnectionImplementation.createConnection(conf);
         Admin admin = connection.getAdmin();
 
         int i = 0;
@@ -297,8 +312,8 @@ public class HMasterCommandLine extends ServerCommandLine {
                     System.out.print("Enter table name: ");
                     admin.deleteTable(TableName.valueOf(scanner.nextLine()));
                     break;
-                case "mutate":
-                    this.mutate(connection);
+                case "put":
+                    this.put(myConnection, Arrays.asList("put", "test", "row1", "q1", "value1"));
                     break;
                 default:
                     System.out.println("[" + inputCommand + "] is not a valid command. Please try again.");

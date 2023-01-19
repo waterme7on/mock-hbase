@@ -3,8 +3,7 @@ package org.waterme7on.hbase.master;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.ClusterMetrics;
-import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
@@ -17,6 +16,8 @@ import com.google.protobuf.Service;
 
 public interface MasterServices extends Server {
     public LoadBalancer getLoadBalancer();
+
+    public MetaLocationSyncer getMetaLocationSyncer();
 
     public BlockingRpcChannel getRsStub(ServerName serverName) throws IOException;
 
@@ -48,5 +49,9 @@ public interface MasterServices extends Server {
     // ProcedureExecutor<MasterProcedureEnv> getMasterProcedureExecutor();
     /** Returns Master's instance of {@link TableStateManager} */
     TableStateManager getTableStateManager();
+
+    void updateRegionLocation(TableName tableName, HRegionLocation loc);
+
+    RegionLocations getRegionLocation(TableName tableName);
 
 }

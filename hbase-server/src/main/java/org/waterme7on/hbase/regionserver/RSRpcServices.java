@@ -557,18 +557,19 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
     }
 
     private void checkCellSizeLimit(final HRegion r, final Mutation m) throws IOException {
-        if (r.maxCellSize > 0) {
-            CellScanner cells = m.cellScanner();
-            while (cells.advance()) {
-                int size = PrivateCellUtil.estimatedSerializedSizeOf((Cell) cells.current());
-                if (size > r.maxCellSize) {
-                    String msg = "Cell[" + cells.current() + "] with size " + size + " exceeds limit of "
-                            + r.maxCellSize + " bytes";
-                    LOG.debug(msg);
-                    throw new DoNotRetryIOException(msg);
-                }
-            }
-        }
+        // if (r.maxCellSize > 0) {
+        // CellScanner cells = m.cellScanner();
+        // while (cells.advance()) {
+        // int size = PrivateCellUtil.estimatedSerializedSizeOf((Cell) cells.current());
+        // if (size > r.maxCellSize) {
+        // String msg = "Cell[" + cells.current() + "] with size " + size + " exceeds
+        // limit of "
+        // + r.maxCellSize + " bytes";
+        // LOG.debug(msg);
+        // throw new DoNotRetryIOException(msg);
+        // }
+        // }
+        // }
 
     }
 

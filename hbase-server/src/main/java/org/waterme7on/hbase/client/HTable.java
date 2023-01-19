@@ -10,18 +10,23 @@ import java.util.function.Supplier;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HRegionLocation;
+import org.apache.hadoop.hbase.RegionLocations;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.client.trace.TableOperationSpanBuilder;
 import org.apache.hadoop.hbase.shaded.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.trace.TraceUtil;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
+import org.apache.hadoop.hbase.ServerName;
 import org.apache.hbase.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import org.apache.hadoop.hbase.ipc.RpcControllerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos.*;
 
 public class HTable implements Table {
 
@@ -33,8 +38,6 @@ public class HTable implements Table {
     private final ExecutorService pool; // For Multi & Scan
     private final RpcRetryingCallerFactory rpcCallerFactory;
     private final RpcControllerFactory rpcControllerFactory;
-
-
 
     public static ThreadPoolExecutor getDefaultExecutor(Configuration conf) {
         int maxThreads = conf.getInt("hbase.htable.threads.max", Integer.MAX_VALUE);
@@ -91,14 +94,40 @@ public class HTable implements Table {
 
     @Override
     public void put(final Put put) throws IOException {
-        TraceUtil.trace(() -> {
-            LOG.debug(put.toString());
-        }, "HTable.put");
+        try {
+
+            TraceUtil.trace(() -> {
+                validatePut(put);
+                TableLocationRequest tableMapRequest = TableLocationRequest.newBuilder()
+                        .setTableName(tableName.getNameAsString()).build();
+                TableLocationService.BlockingInterface rs = (TableLocationService.BlockingInterface) this.connection
+                        .getTableMapService();
+                TableLocationResponse tableMapResponse = rs.tableLocation(rpcControllerFactory.newController(),
+                        tableMapRequest);
+                LOG.debug(tableMapResponse.getRegionName());
+                LOG.debug(tableMapResponse.getServerName());
+
+                
+                ClientProtos.MutateRequest request = RequestConverter
+                        .buildMutateRequest(Bytes.toBytes(tableMapResponse.getRegionName()), put);
+                ClientProtos.ClientService.BlockingInterface stub = (ClientProtos.ClientService.BlockingInterface) this.connection
+                        .getClient(ServerName.parseServerName(tableMapResponse.getServerName()));
+                stub.mutate(rpcControllerFactory.newController(), request);
+                LOG.debug("HTable.put - " + put.toString());
+            }, "HTable.put");
+        } catch (Exception e) {
+            throw new IOException(e);
+        }
     }
 
     @Override
     public void close() {
 
+    }
+
+    // validate for well-formedness
+    private void validatePut(final Put put) throws IllegalArgumentException {
+        // TODO
     }
 
 }

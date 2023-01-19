@@ -1,0 +1,25 @@
+syntax = "proto2";
+
+package hbase.pb;
+
+option java_package = "org.waterme7on.hbase.protobuf.generated";
+option java_outer_classname = "TableMapProtos";
+option java_generic_services = true;
+option java_generate_equals_and_hash = true;
+option optimize_for = SPEED;
+
+
+message TableLocationRequest {
+  required string table_name = 1;
+}
+
+message TableLocationResponse {
+  required string server_name = 1;
+  required string region_name = 2;
+}
+
+service TableLocationService {
+    /** Called when a region server first starts. */
+    rpc TableLocation(TableLocationRequest)
+        returns(TableLocationResponse);
+}
