@@ -17,6 +17,7 @@ import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.hbase.HBaseIOException;
+import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.RegionInfo;
@@ -235,6 +236,13 @@ public class AssignmentManager {
                         try {
                             regionNode.setRegionLocation(server);
                             openRegion(regionNode);
+                            if (TableName.isMetaTableName(hri.getTable())) {
+                                MetaLocationSyncer syncer = master.getMetaLocationSyncer();
+                                if (syncer != null) {
+//                                    syncer..
+                                }
+                            }
+
                         } catch (Exception e) {
                             queueAssign(regionNode);
                             LOG.error("Failed to open region " + hri.getRegionNameAsString(), e);
@@ -364,6 +372,8 @@ public class AssignmentManager {
             for (Map.Entry<ServerName, List<RegionInfo>> entry : plan.entrySet()) {
                 final ServerName server = entry.getKey();
                 for (RegionInfo rf : entry.getValue()) {
+                    HRegionLocation loc = new HRegionLocation(rf, server);
+                    this.master.updateRegionLocation(rf.getTable(), loc);
                     final RegionStateNode regionNode = regionStates.getOrCreateRegionStateNode(rf);
                     LOG.debug("assign {} to {}", rf.getRegionNameAsString(), server);
                     try {
@@ -396,7 +406,7 @@ public class AssignmentManager {
         List<RegionInfo> newRegions = RegionReplicaUtil.addReplicas(regions, 1, tableDescriptor.getRegionReplication());
 
         // Add regions to META
-        addRegionsToMeta(tableDescriptor, newRegions);
+//        this.master.updateRegionLocation();
 
         // Setup replication for region replicas if needed
         if (tableDescriptor.getRegionReplication() > 1) {

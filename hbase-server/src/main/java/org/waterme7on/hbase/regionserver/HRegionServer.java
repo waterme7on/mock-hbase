@@ -6,15 +6,12 @@ import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.Abortable;
-import org.apache.hadoop.hbase.ChoreService;
-import org.apache.hadoop.hbase.CoordinatedStateManager;
-import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.NotServingRegionException;
-import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.ConnectionRegistry;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.zookeeper.*;
+import org.waterme7on.hbase.client.RegionServerRegistry;
 import org.apache.hadoop.hbase.exceptions.RegionMovedException;
 import org.apache.hadoop.hbase.exceptions.RegionOpeningException;
 import org.waterme7on.hbase.TableDescriptors;
@@ -35,12 +32,7 @@ import org.apache.hadoop.hbase.util.RetryCounter;
 import org.apache.hadoop.hbase.util.RetryCounterFactory;
 import org.waterme7on.hbase.Server;
 import org.apache.hadoop.hbase.util.Sleeper;
-import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
-import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
-import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
-import org.apache.hadoop.hbase.zookeeper.ZKNodeTracker;
-import org.apache.hadoop.hbase.zookeeper.ZKUtil;
-import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
+import org.apache.hadoop.hbase.MetaRegionLocationCache;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hbase.thirdparty.com.google.common.cache.Cache;
 import org.apache.hbase.thirdparty.com.google.common.cache.CacheBuilder;
@@ -67,9 +59,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -242,6 +232,14 @@ public class HRegionServer extends Thread implements RegionServerServices {
             }
 
             this.rpcServices.start(zooKeeper);
+            this.metaRegionLocationCache = new MetaRegionLocationCache(zooKeeper);
+            if (!(this instanceof HMaster)) {
+                // do not create this field for HMaster, we have another region server tracker for HMaster.
+                this.regionServerAddressTracker = new RegionServerAddressTracker(zooKeeper, this);
+            } else {
+                this.regionServerAddressTracker = null;
+            }
+
             // init filesystem
         } catch (Throwable t) {
             // Make sure we log the exception. HRegionServer is often started via reflection
@@ -324,7 +322,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
     @Override
     public Connection createConnection(Configuration conf) throws IOException {
         return ServerConnectionUtils.createShortCircuitConnection(conf, User.getCurrent(), this.serverName,
-                this.rpcServices, this.rpcServices, null);
+                this.rpcServices, this.rpcServices, new RegionServerRegistry(this));
     }
 
     /**
@@ -421,6 +419,29 @@ public class HRegionServer extends Thread implements RegionServerServices {
 
     public int movedRegionCacheExpiredTime() {
         return TIMEOUT_REGION_MOVED;
+    }
+    /**
+     * Cache for the meta region replica's locations. Also tracks their changes to avoid stale cache
+     * entries. Used for serving ClientMetaService.
+     */
+    private final MetaRegionLocationCache metaRegionLocationCache;
+    /**
+     * Cache for all the region servers in the cluster. Used for serving ClientMetaService.
+     */
+    private final RegionServerAddressTracker regionServerAddressTracker;
+    public Optional<ServerName> getActiveMaster() {
+        return Optional.ofNullable(masterAddressTracker.getMasterAddress());
+    }
+    public Iterator<ServerName> getRegionServers() {
+        return regionServerAddressTracker.getRegionServers().iterator();
+    }
+
+    public MetaRegionLocationCache getMetaRegionLocationCache() {
+        return this.metaRegionLocationCache;
+    }
+
+    public String getClusterId() {
+        return this.clusterId;
     }
 
     private static class MovedRegionInfo {

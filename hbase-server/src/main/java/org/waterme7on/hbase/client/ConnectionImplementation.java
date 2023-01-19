@@ -4,6 +4,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.util.Map;
 import java.util.concurrent.*;
 
 import org.apache.hadoop.conf.Configuration;
@@ -17,6 +18,7 @@ import org.apache.hadoop.hbase.ipc.RpcControllerFactory;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.shaded.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.MasterProtos;
 import org.apache.hadoop.hbase.util.ConcurrentMapUtils;
 import org.apache.hbase.thirdparty.com.google.common.base.Throwables;
@@ -38,6 +40,7 @@ public class ConnectionImplementation implements ClusterConnection {
 
     private final int metaReplicaCallTimeoutScanInMicroSecond;
     private final int numTries;
+    private final Object metaRegionLock = new Object();
 
     // Client rpc instance.
     private final RpcClient rpcClient;
@@ -133,6 +136,10 @@ public class ConnectionImplementation implements ClusterConnection {
         return null;
     }
 
+    public org.waterme7on.hbase.client.HRegionLocator getLocator(TableName tableName) throws IOException {
+        return new org.waterme7on.hbase.client.HRegionLocator(tableName, this);
+    }
+
     @Override
     public void clearRegionLocationCache() {
         // TODO Auto-generated method stub
@@ -143,6 +150,17 @@ public class ConnectionImplementation implements ClusterConnection {
     public Admin getAdmin() throws IOException {
         // TODO Auto-generated method stub
         return null;
+    }
+
+    @Override
+    public ClientProtos.ClientService.BlockingInterface getClient(ServerName serverName) throws IOException {
+        String key =
+                getStubKey(ClientProtos.ClientService.BlockingInterface.class.getName(), serverName);
+        return (ClientProtos.ClientService.BlockingInterface) computeIfAbsentEx(stubs, key, () -> {
+            BlockingRpcChannel channel =
+                    this.rpcClient.createBlockingRpcChannel(serverName, user, rpcTimeout);
+            return ClientProtos.ClientService.newBlockingStub(channel);
+        });
     }
     @Override
     public void close() throws IOException {
@@ -199,7 +217,32 @@ public class ConnectionImplementation implements ClusterConnection {
         return this.masterServiceState.stub;
     }
 
-    private void resetMasterServiceState(final MasterServiceState mss) {
+    @Override
+    public RegionLocations locateRegion(TableName tableName, byte[] row, boolean useCache, boolean retry, int replicaId) throws IOException {
+        if (tableName.equals(TableName.META_TABLE_NAME)) {
+            return locateMeta(tableName, useCache, replicaId);
+        } else {
+            // Region not in the cache - have to go to the meta RS
+            return locateRegionInMeta(tableName, row, useCache, retry, replicaId);
+        }
+
+    }
+    private RegionLocations locateMeta(final TableName tableName, boolean useCache, int replicaId)
+            throws IOException {
+        RegionLocations locations = null;
+        // only one thread should do the lookup.
+        synchronized (metaRegionLock) {
+            // Look up from zookeeper
+            locations = get(this.registry.getMetaRegionLocations());
+        }
+        return locations;
+    }
+    private RegionLocations locateRegionInMeta(TableName tableName, byte[] row, boolean useCache,
+                                               boolean retry, int replicaId) throws IOException {
+        // TODO
+        return null;
+    }
+        private void resetMasterServiceState(final MasterServiceState mss) {
         mss.userCount++;
     }
 

@@ -10,6 +10,8 @@ import java.util.function.Supplier;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HRegionLocation;
+import org.apache.hadoop.hbase.RegionLocations;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.client.trace.TableOperationSpanBuilder;
@@ -33,8 +35,6 @@ public class HTable implements Table {
     private final ExecutorService pool; // For Multi & Scan
     private final RpcRetryingCallerFactory rpcCallerFactory;
     private final RpcControllerFactory rpcControllerFactory;
-
-
 
     public static ThreadPoolExecutor getDefaultExecutor(Configuration conf) {
         int maxThreads = conf.getInt("hbase.htable.threads.max", Integer.MAX_VALUE);
@@ -91,14 +91,31 @@ public class HTable implements Table {
 
     @Override
     public void put(final Put put) throws IOException {
-        TraceUtil.trace(() -> {
-            LOG.debug(put.toString());
-        }, "HTable.put");
+        try {
+
+            TraceUtil.trace(() -> {
+                validatePut(put);
+                HRegionLocation loc = connection.locateRegion(tableName, put.getRow(), false, false, 0).getRegionLocation();
+                ClientProtos.MutateRequest request =
+                        RequestConverter.buildMutateRequest(loc.getRegion().getRegionName(), put);
+                LOG.debug("HTable.put - {}", loc.toString());
+                ClientProtos.ClientService.BlockingInterface stub = (ClientProtos.ClientService.BlockingInterface) this.connection.getClient(loc.getServerName());
+                stub.mutate(rpcControllerFactory.newController(), request);
+                LOG.debug("HTable.put - " + put.toString());
+            }, "HTable.put");
+        } catch (Exception e) {
+            throw new IOException(e);
+        }
     }
 
     @Override
     public void close() {
 
+    }
+
+    // validate for well-formedness
+    private void validatePut(final Put put) throws IllegalArgumentException {
+        // TODO
     }
 
 }

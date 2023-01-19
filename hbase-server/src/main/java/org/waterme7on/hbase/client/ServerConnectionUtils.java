@@ -45,6 +45,14 @@ public final class ServerConnectionUtils {
         private final ClientService.BlockingInterface localHostClient;
         private final ClientService.BlockingInterface localClientServiceBlockingInterfaceWrapper;
 
+        @Override
+        public ClientService.BlockingInterface getClient(ServerName sn) throws IOException {
+            return serverName.equals(sn)
+                    ? this.localClientServiceBlockingInterfaceWrapper
+                    : super.getClient(sn);
+        }
+
+
         private ShortCircuitingClusterConnection(Configuration conf, User user, ServerName serverName,
                 AdminService.BlockingInterface admin, ClientService.BlockingInterface client,
                 ConnectionRegistry registry) throws IOException {
