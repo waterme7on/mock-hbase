@@ -1,15 +1,17 @@
 package org.waterme7on.hbase.regionserver;
 
 import java.util.concurrent.ConcurrentMap;
+import org.waterme7on.hbase.Server;
 
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionStateTransition.TransitionCode;
-import org.waterme7on.hbase.Server;
 
 public interface RegionServerServices extends Server, OnlineRegions {
     boolean isClusterUp();
 
     public ConcurrentMap<byte[], Boolean> getRegionsInTransitionInRS();
+
+    public RegionServerAccounting getRegionServerAccounting();
 
     /**
      * Context for postOpenDeployTasks().

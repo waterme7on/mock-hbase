@@ -80,7 +80,7 @@ public class HeapMemoryManager {
         }
     }
 
-    private MetricsHeapMemoryManager metricsHeapMemoryManager;
+    // private MetricsHeapMemoryManager metricsHeapMemoryManager;
 
     private List<HeapMemoryTuneObserver> tuneObservers = new ArrayList<>();
 
@@ -96,7 +96,7 @@ public class HeapMemoryManager {
                 HBASE_RS_HEAP_MEMORY_TUNER_DEFAULT_PERIOD);
         this.heapOccupancyLowWatermark = conf.getFloat(HConstants.HEAP_OCCUPANCY_LOW_WATERMARK_KEY,
                 HConstants.DEFAULT_HEAP_OCCUPANCY_LOW_WATERMARK);
-        metricsHeapMemoryManager = new MetricsHeapMemoryManager();
+        // metricsHeapMemoryManager = new MetricsHeapMemoryManager();
     }
 
     private ResizableBlockCache toResizableBlockCache(BlockCache blockCache) {
@@ -252,7 +252,7 @@ public class HeapMemoryManager {
                             + " is above heap occupancy alarm watermark (" + heapOccupancyLowWatermark + ")");
                     alarming = true;
                 }
-                metricsHeapMemoryManager.increaseAboveHeapOccupancyLowWatermarkCounter();
+                // metricsHeapMemoryManager.increaseAboveHeapOccupancyLowWatermarkCounter();
                 triggerNow();
                 try {
                     // Need to sleep ourselves since we've told the chore's sleeper
@@ -291,16 +291,16 @@ public class HeapMemoryManager {
             cacheMissCount = curCacheMisCount;
             blockedFlushCnt = blockedFlushCount.getAndSet(0);
             tunerContext.setBlockedFlushCount(blockedFlushCnt);
-            metricsHeapMemoryManager.updateBlockedFlushCount(blockedFlushCnt);
+            // metricsHeapMemoryManager.updateBlockedFlushCount(blockedFlushCnt);
             unblockedFlushCnt = unblockedFlushCount.getAndSet(0);
             tunerContext.setUnblockedFlushCount(unblockedFlushCnt);
-            metricsHeapMemoryManager.updateUnblockedFlushCount(unblockedFlushCnt);
+            // metricsHeapMemoryManager.updateUnblockedFlushCount(unblockedFlushCnt);
             // TODO : add support for offheap metrics
             tunerContext.setCurBlockCacheUsed((float) blockCache.getCurrentSize() / maxHeapSize);
-            metricsHeapMemoryManager.setCurBlockCacheSizeGauge(blockCache.getCurrentSize());
+            // metricsHeapMemoryManager.setCurBlockCacheSizeGauge(blockCache.getCurrentSize());
             long globalMemstoreHeapSize = regionServerAccounting.getGlobalMemStoreHeapSize();
             tunerContext.setCurMemStoreUsed((float) globalMemstoreHeapSize / maxHeapSize);
-            metricsHeapMemoryManager.setCurMemStoreSizeGauge(globalMemstoreHeapSize);
+            // metricsHeapMemoryManager.setCurMemStoreSizeGauge(globalMemstoreHeapSize);
             tunerContext.setCurBlockCacheSize(blockCachePercent);
             tunerContext.setCurMemStoreSize(globalMemStorePercent);
             TunerResult result = null;
@@ -345,8 +345,8 @@ public class HeapMemoryManager {
                 } else {
                     int memStoreDeltaSize = (int) ((memstoreSize - globalMemStorePercent) * CONVERT_TO_PERCENTAGE);
                     int blockCacheDeltaSize = (int) ((blockCacheSize - blockCachePercent) * CONVERT_TO_PERCENTAGE);
-                    metricsHeapMemoryManager.updateMemStoreDeltaSizeHistogram(memStoreDeltaSize);
-                    metricsHeapMemoryManager.updateBlockCacheDeltaSizeHistogram(blockCacheDeltaSize);
+                    // metricsHeapMemoryManager.updateMemStoreDeltaSizeHistogram(memStoreDeltaSize);
+                    // metricsHeapMemoryManager.updateBlockCacheDeltaSizeHistogram(blockCacheDeltaSize);
                     long newBlockCacheSize = (long) (maxHeapSize * blockCacheSize);
                     // we could have got an increase or decrease in size for the offheap memstore
                     // also if the flush had happened due to heap overhead. In that case it is ok
@@ -367,7 +367,7 @@ public class HeapMemoryManager {
                     }
                 }
             } else {
-                metricsHeapMemoryManager.increaseTunerDoNothingCounter();
+                // metricsHeapMemoryManager.increaseTunerDoNothingCounter();
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("No changes made by HeapMemoryTuner.");
                 }

@@ -241,7 +241,7 @@ public class HMasterCommandLine extends ServerCommandLine {
             }
             return deleteTable(remainingArgs.get(1));
         } else if ("shell".equals(command)) {
-            shell();
+            this.shell();
         } else {
             usage("Invalid command: " + command);
             return 1;
@@ -249,7 +249,26 @@ public class HMasterCommandLine extends ServerCommandLine {
         return 0;
     }
 
-    void shell() throws IOException {
+    private void mutate(Connection connection) {
+        try {
+            Table table = connection.getTable(TableName.valueOf("test"));
+            Put put = new Put(Bytes.toBytes("row1"));
+            put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q1"), Bytes.toBytes("value1"));
+            table.put(put);
+            Get get = new Get(Bytes.toBytes("row1"));
+            Result result = table.get(get);
+            System.out.println("Get: " + result);
+            Scan scan = new Scan();
+            ResultScanner scanner = table.getScanner(scan);
+            for (Result scannerResult : scanner) {
+                System.out.println("Scan: " + scannerResult);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void shell() throws IOException {
         Configuration conf = getConf();
         conf.addResource(null, "hbase-site.xml");
         conf.addResource("hbase-site.xml");
@@ -259,8 +278,9 @@ public class HMasterCommandLine extends ServerCommandLine {
         Connection connection = ConnectionFactory.createConnection(conf);
         Admin admin = connection.getAdmin();
 
+        int i = 0;
         while (true) {
-            System.out.print("hbase(main):001:0> ");
+            System.out.printf("hbase(main):{}> ", i++);
             inputCommand = scanner.nextLine();
             if (inputCommand.equals("exit")) {
                 break;
@@ -276,6 +296,9 @@ public class HMasterCommandLine extends ServerCommandLine {
                 case "deleteTable":
                     System.out.print("Enter table name: ");
                     admin.deleteTable(TableName.valueOf(scanner.nextLine()));
+                    break;
+                case "mutate":
+                    this.mutate(connection);
                     break;
                 default:
                     System.out.println("[" + inputCommand + "] is not a valid command. Please try again.");

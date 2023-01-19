@@ -4,9 +4,15 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.LocatedFileStatus;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.RemoteIterator;
+import org.apache.hadoop.hbase.ChoreService;
 import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.ClusterMetrics;
 import org.apache.hadoop.hbase.ClusterMetricsBuilder;
+import org.apache.hadoop.hbase.CoordinatedStateManager;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.PleaseHoldException;
@@ -14,16 +20,24 @@ import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.client.RegionInfoBuilder;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.exceptions.MasterStoppedException;
+import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.log.HBaseMarkers;
+import org.apache.hadoop.hbase.master.RegionState;
+import org.apache.hadoop.hbase.master.assignment.RegionStateNode;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos;
+import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
 import org.apache.hadoop.hbase.ServerMetrics;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.AdminService;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.RegionServerInfo;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService.BlockingInterface;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Addressing;
+import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Threads;
@@ -35,6 +49,7 @@ import org.waterme7on.hbase.regionserver.HRegion;
 import org.waterme7on.hbase.regionserver.HRegionFactory;
 import org.waterme7on.hbase.regionserver.HRegionServer;
 import org.waterme7on.hbase.regionserver.RSRpcServices;
+import org.waterme7on.hbase.util.FSTableDescriptors;
 import org.waterme7on.hbase.util.ModifyRegionUtils;
 
 import com.google.protobuf.Service;
@@ -54,6 +69,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 
+import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Handler;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.Server;
 import org.apache.hbase.thirdparty.org.eclipse.jetty.server.ServerConnector;
@@ -61,10 +77,10 @@ import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 import org.waterme7on.hbase.TableDescriptors;
-import org.waterme7on.hbase.client.ClusterConnection;
 import org.waterme7on.hbase.ipc.RpcServer;
 import org.waterme7on.hbase.monitoring.MonitoredTask;
 import org.waterme7on.hbase.monitoring.TaskMonitor;
+import org.waterme7on.hbase.regionserver.HRegionFactory.MasterRegion;
 
 public class HMaster extends HRegionServer implements MasterServices {
     private static final Logger LOG = LoggerFactory.getLogger(HMaster.class);
@@ -86,8 +102,10 @@ public class HMaster extends HRegionServer implements MasterServices {
     private volatile boolean activeMaster = false;
     // flag set after we complete initialization once active
     private final ProcedureEvent<?> initialized = new ProcedureEvent<>("master initialized");
-
-    private HRegion masterRegion;
+    // manager of assignment nodes in zookeeper
+    private AssignmentManager assignmentManager;
+    private LoadBalancer balancer;
+    private MasterRegion masterRegion;
     private RegionServerList rsListStorage;
     // server manager to deal with region server info
     private volatile ServerManager serverManager;
@@ -97,7 +115,9 @@ public class HMaster extends HRegionServer implements MasterServices {
     volatile boolean serviceStarted = false;
     // Time stamps for when a hmaster became active
     private long masterActiveTime;
+
     // private final RegionServerTracker regionServerTracker;
+    private HashMap<ServerName, BlockingRpcChannel> rsStubMap = new HashMap<>();
 
     public HMaster(final Configuration conf) throws IOException {
         super(conf);
@@ -106,6 +126,7 @@ public class HMaster extends HRegionServer implements MasterServices {
             LOG.info("hbase.rootdir={}, hbase.cluster.distributed={}", getDataRootDir(),
                     this.conf.getBoolean(HConstants.CLUSTER_DISTRIBUTED, false));
             this.conf.setBoolean(HConstants.USE_META_REPLICAS, false);
+            this.balancer = new LoadBalancer(conf);
             this.activeMasterManager = createActiveMasterManager(zooKeeper, serverName, this);
             span.setStatus(StatusCode.OK);
         } catch (Throwable t) {
@@ -288,20 +309,32 @@ public class HMaster extends HRegionServer implements MasterServices {
         // Set ourselves as active Master now our claim has succeeded up in zk.
         this.activeMaster = true;
 
-        // TODO...
-
+        // Checking if meta needs initializing.
+        status.setStatus("Initializing meta table if this is a new deploy");
+        // Create Assignment Manager
+        this.assignmentManager = createAssignmentManager(this, masterRegion);
+        this.assignmentManager.start();
+        // Print out state of hbase:meta on startup; helps debugging.
+        if (!this.assignmentManager.regionStates.hasTableRegionStates(TableName.META_TABLE_NAME)) {
+            this.assignmentManager.initMeta();
+        }
         // start up all service threads.
         status.setStatus("Initializing master service threads");
         startServiceThreads();
 
         // TODO...
-
+        // this.assignmentManager.joinCluster();
         // Set master as 'initialized'.
         status.markComplete("Initialization successful");
         setInitialized(true);
 
         // TODO...
         LOG.info("Master finish ActiveMasterInitialization and become active");
+    }
+
+    protected AssignmentManager createAssignmentManager(MasterServices master,
+            MasterRegion masterRegion) {
+        return new AssignmentManager(master, masterRegion);
     }
 
     private void initializeZKBasedSystemTrackers()
@@ -509,8 +542,8 @@ public class HMaster extends HRegionServer implements MasterServices {
     }
 
     protected ActiveMasterManager createActiveMasterManager(ZKWatcher zk, ServerName sn,
-            org.waterme7on.hbase.Server server) throws InterruptedIOException {
-        return new ActiveMasterManager(zk, sn, server);
+            HMaster hMaster) throws InterruptedIOException {
+        return new ActiveMasterManager(zk, sn, hMaster);
     }
 
     @Override
@@ -576,6 +609,22 @@ public class HMaster extends HRegionServer implements MasterServices {
         if (!serviceStarted) {
             throw new ServerNotRunningYetException("Server is not running yet");
         }
+    }
+
+    public BlockingRpcChannel getRsStub(ServerName serverName) throws IOException {
+        if (!this.rsStubMap.containsKey(serverName)) {
+            updateRsStub(serverName);
+        }
+        BlockingRpcChannel channel = this.rsStubMap.get(serverName);
+        if (channel == null) {
+            updateRsStub(serverName);
+        }
+        return this.rsStubMap.get(serverName);
+    }
+
+    private void updateRsStub(ServerName serverName) throws IOException {
+        BlockingRpcChannel channel = createChannelToServerName(serverName);
+        this.rsStubMap.put(serverName, channel);
     }
 
     public long createTable(final TableDescriptor tableDescriptor, final byte[][] splitKeys, final long nonceGroup,
@@ -718,4 +767,10 @@ public class HMaster extends HRegionServer implements MasterServices {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'getTableStateManager'");
     }
+
+    @Override
+    public LoadBalancer getLoadBalancer() {
+        return this.balancer;
+    }
+
 }

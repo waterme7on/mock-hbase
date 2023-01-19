@@ -15,8 +15,15 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FilterFileSystem;
 import org.apache.hadoop.fs.LocalFileSystem;
+import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.RegionInfoBuilder;
+import org.apache.hadoop.hbase.client.TableDescriptor;
+import org.apache.hadoop.hbase.io.hfile.HFile;
+import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.ReflectionUtils;
 // import org.apache.hadoop.hbase.wal.AbstractFSWALProvider;
@@ -34,6 +41,8 @@ import org.apache.hadoop.util.Progressable;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.regionserver.HRegion;
+import org.waterme7on.hbase.util.FSTableDescriptors;
 
 /**
  * An encapsulation for the FileSystem object that hbase uses to access data.
@@ -505,4 +514,5 @@ public class HFileSystem extends FilterFileSystem {
             short replication, long blockSize, Progressable progress) throws IOException {
         return fs.createNonRecursive(f, overwrite, bufferSize, replication, blockSize, progress);
     }
+
 }

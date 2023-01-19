@@ -4,13 +4,22 @@ import org.apache.hbase.thirdparty.com.google.protobuf.Message;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.Append;
+import org.apache.hadoop.hbase.client.CheckAndMutate;
+import org.apache.hadoop.hbase.client.CheckAndMutateResult;
+import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.CellScanner;
+import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.io.ByteBuffAllocator;
 import org.apache.hadoop.hbase.ipc.HBaseRpcController;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.net.Address;
+import org.apache.hadoop.hbase.quotas.ActivePolicyEnforcement;
+import org.apache.hadoop.hbase.quotas.OperationQuota;
 import org.apache.hadoop.hbase.regionserver.RegionServerAbortedException;
 import org.apache.hadoop.hbase.regionserver.RegionServerStoppedException;
 import org.apache.hadoop.hbase.security.User;
@@ -29,8 +38,13 @@ import org.apache.hbase.thirdparty.com.google.protobuf.ServiceException;
 import org.apache.hadoop.hbase.Abortable;
 import org.waterme7on.hbase.ipc.*;
 import org.waterme7on.hbase.ipc.RpcServer.BlockingServiceAndInterface;
+import org.waterme7on.hbase.ByteBufferExtendedCell;
+import org.waterme7on.hbase.Cell;
+import org.waterme7on.hbase.PrivateCellUtil;
 import org.waterme7on.hbase.Server;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.client.Mutation;
+import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.AdminService;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.ClearCompactionQueuesRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.ClearCompactionQueuesResponse;
@@ -60,6 +74,7 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.GetStoreFil
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.GetStoreFileResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.OpenRegionRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.OpenRegionResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.RemoteProcedureRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.ReplicateWALEntryRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.ReplicateWALEntryResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.RollWALWriterRequest;
@@ -81,6 +96,7 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.BulkLoadHF
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.CleanupBulkLoadRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.CleanupBulkLoadResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.ClientService;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Condition;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.CoprocessorServiceRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.GetRequest;
@@ -94,6 +110,7 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.PrepareBul
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.PrepareBulkLoadResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.ScanRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.ScanResponse;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.MutationProto.MutationType;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RegistryProtos.ClientMetaService;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RegistryProtos.GetActiveMasterRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RegistryProtos.GetActiveMasterResponse;
@@ -116,6 +133,7 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.BindException;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -199,19 +217,19 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
     }
 
     protected List<BlockingServiceAndInterface> getServices() {
-        boolean admin = getConfiguration().getBoolean(REGIONSERVER_ADMIN_SERVICE_CONFIG, true);
-        boolean client = getConfiguration().getBoolean(REGIONSERVER_CLIENT_SERVICE_CONFIG, true);
-        boolean clientMeta = getConfiguration().getBoolean(REGIONSERVER_CLIENT_META_SERVICE_CONFIG, true);
         List<BlockingServiceAndInterface> bssi = new ArrayList<>();
-        // if (client) {
-        // bssi.add(new
-        // BlockingServiceAndInterface(ClientService.newReflectiveBlockingService(this),
-        // ClientService.BlockingInterface.class));
-        // }
+        boolean client = getConfiguration().getBoolean(REGIONSERVER_CLIENT_SERVICE_CONFIG, true);
+        if (client) {
+            bssi.add(new BlockingServiceAndInterface(ClientService.newReflectiveBlockingService(this),
+                    ClientService.BlockingInterface.class));
+        }
+        boolean admin = getConfiguration().getBoolean(REGIONSERVER_ADMIN_SERVICE_CONFIG, true);
         if (admin) {
             bssi.add(new BlockingServiceAndInterface(AdminService.newReflectiveBlockingService(this),
                     AdminService.BlockingInterface.class));
         }
+        // boolean clientMeta =
+        // getConfiguration().getBoolean(REGIONSERVER_CLIENT_META_SERVICE_CONFIG, true);
         // if (clientMeta) {
         // bssi.add(new
         // BlockingServiceAndInterface(ClientMetaService.newReflectiveBlockingService(this),
@@ -355,6 +373,102 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
         throw new UnsupportedOperationException("Unimplemented method 'get'");
     }
 
+    /**
+     * Execute an append mutation.
+     * 
+     * @return result to return to client if default operation should be bypassed as
+     *         indicated by
+     *         RegionObserver, null otherwise
+     */
+    private Result append(final HRegion region, final OperationQuota quota,
+            final MutationProto mutation, final CellScanner cellScanner, long nonceGroup,
+            ActivePolicyEnforcement spaceQuota) throws IOException {
+        // long before = EnvironmentEdgeManager.currentTime();
+        Append append = ProtobufUtil.toAppend(mutation, cellScanner);
+        checkCellSizeLimit(region, append);
+        if (spaceQuota != null) {
+            // spaceQuota.getPolicyEnforcement(region).check(append);
+        }
+        if (quota != null) {
+            // quota.addMutation(append);
+        }
+        long nonce = mutation.hasNonce() ? mutation.getNonce() : HConstants.NO_NONCE;
+        Result r = region.append(append, nonceGroup, nonce);
+        // if (regionServer.getMetrics() != null) {
+        // regionServer.getMetrics().updateAppend(region.getTableDescriptor().getTableName(),
+        // EnvironmentEdgeManager.currentTime() - before);
+        // }
+        return r == null ? Result.EMPTY_RESULT : r;
+    }
+
+    /**
+     * Execute an increment mutation.
+     */
+    private Result increment(final HRegion region, final OperationQuota quota,
+            final MutationProto mutation, final CellScanner cells, long nonceGroup,
+            ActivePolicyEnforcement spaceQuota) throws IOException {
+        // long before = EnvironmentEdgeManager.currentTime();
+        Increment increment = ProtobufUtil.toIncrement(mutation, cells);
+        checkCellSizeLimit(region, increment);
+        if (spaceQuota != null) {
+            // spaceQuota.getPolicyEnforcement(region).check(increment);
+        }
+        if (quota != null) {
+            // quota.addMutation(increment);
+        }
+        long nonce = mutation.hasNonce() ? mutation.getNonce() : HConstants.NO_NONCE;
+        Result r = region.increment(increment, nonceGroup, nonce);
+        // final MetricsRegionServer metricsRegionServer = regionServer.getMetrics();
+        // if (metricsRegionServer != null) {
+        // metricsRegionServer.updateIncrement(region.getTableDescriptor().getTableName(),
+        // EnvironmentEdgeManager.currentTime() - before);
+        // }
+        return r == null ? Result.EMPTY_RESULT : r;
+    }
+
+    private void delete(HRegion region, OperationQuota quota, MutationProto mutation,
+            CellScanner cellScanner, ActivePolicyEnforcement spaceQuota) throws IOException {
+        // long before = EnvironmentEdgeManager.currentTime();
+        Delete delete = ProtobufUtil.toDelete(mutation, cellScanner);
+        checkCellSizeLimit(region, delete);
+        if (spaceQuota != null) {
+            // spaceQuota.getPolicyEnforcement(region).check(delete);
+        }
+        if (quota != null) {
+            // quota.addMutation(delete);
+        }
+        region.delete(delete);
+
+        // MetricsRegionServer metricsRegionServer = regionServer.getMetrics();
+        // if (metricsRegionServer != null) {
+        // long after = EnvironmentEdgeManager.currentTime();
+        // metricsRegionServer.updateDelete(region.getRegionInfo().getTable(), after -
+        // before);
+        // }
+    }
+
+    private void put(HRegion region, OperationQuota quota, MutationProto mutation,
+            CellScanner cellScanner, ActivePolicyEnforcement spaceQuota) throws IOException {
+        // long before = EnvironmentEdgeManager.currentTime();
+        Put put = ProtobufUtil.toPut(mutation, cellScanner);
+        checkCellSizeLimit(region, put);
+
+        if (spaceQuota != null) {
+            // spaceQuota.getPolicyEnforcement(region).check(put);
+        }
+        if (quota != null) {
+            // quota.addMutation(put);
+        }
+        region.put(put);
+
+        // MetricsRegionServer metricsRegionServer = regionServer.getMetrics();
+        // if (metricsRegionServer != null) {
+        // long after = EnvironmentEdgeManager.currentTime();
+        // metricsRegionServer.updatePut(region.getRegionInfo().getTable(), after -
+        // before);
+        // }
+    }
+
     @Override
     public MutateResponse mutate(RpcController controller, MutateRequest request) throws ServiceException {
         // TODO Auto-generated method stub
@@ -371,13 +485,88 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
             HRegion region = getRegion(request.getRegion());
             MutationProto mutation = request.getMutation();
             MutateResponse.Builder builder = MutateResponse.newBuilder();
-            if (!region.getRegionInfo().isMetaRegion()) {
-                regionServer.getMemStoreFlusher().reclaimMemStoreMemory();
-            }
+            OperationQuota quota = null;
+            ActivePolicyEnforcement spaceQuotaEnforcement = null;
+            long nonceGroup = request.hasNonceGroup() ? request.getNonceGroup() : HConstants.NO_NONCE;
 
+            if (!region.getRegionInfo().isMetaRegion()) {
+                // regionServer.getMemStoreFlusher().reclaimMemStoreMemory();
+            }
+            if (request.hasCondition()) {
+                CheckAndMutateResult result = checkAndMutate(region, quota, mutation, cellScanner,
+                        request.getCondition(), nonceGroup, spaceQuotaEnforcement);
+                builder.setProcessed(result.isSuccess());
+                boolean clientCellBlockSupported = isClientCellBlockSupport(context);
+                addResult(builder, result.getResult(), (HBaseRpcController) controller, clientCellBlockSupported);
+                if (clientCellBlockSupported) {
+                    addSize(context, result.getResult(), null);
+                }
+            } else {
+                Result r = null;
+                Boolean processed = null;
+                MutationType type = mutation.getMutateType();
+                switch (type) {
+                    case APPEND:
+                        // TODO: this doesn't actually check anything.
+                        r = append(region, quota, mutation, cellScanner, nonceGroup,
+                                spaceQuotaEnforcement);
+                        break;
+                    case INCREMENT:
+                        // TODO: this doesn't actually check anything.
+                        r = increment(region, quota, mutation, cellScanner, nonceGroup,
+                                spaceQuotaEnforcement);
+                        break;
+                    case PUT:
+                        put(region, quota, mutation, cellScanner, spaceQuotaEnforcement);
+                        processed = Boolean.TRUE;
+                        break;
+                    case DELETE:
+                        delete(region, quota, mutation, cellScanner, spaceQuotaEnforcement);
+                        processed = Boolean.TRUE;
+                        break;
+                    default:
+                        throw new DoNotRetryIOException("Unsupported mutate type: " + type.name());
+                }
+                if (processed != null) {
+                    builder.setProcessed(processed);
+                }
+                boolean clientCellBlockSupported = isClientCellBlockSupport(context);
+                addResult(builder, r, (HBaseRpcController) controller, clientCellBlockSupported);
+                if (clientCellBlockSupported) {
+                    addSize(context, r, null);
+                }
+            }
             return builder.build();
         } catch (IOException e) {
             throw new ServiceException(e);
+        }
+
+    }
+
+    private CheckAndMutateResult checkAndMutate(HRegion region, OperationQuota quota,
+            MutationProto mutation, CellScanner cellScanner, Condition condition, long nonceGroup,
+            ActivePolicyEnforcement spaceQuota) throws IOException {
+        long before = EnvironmentEdgeManager.currentTime();
+        CheckAndMutate checkAndMutate = ProtobufUtil.toCheckAndMutate(condition, mutation, cellScanner);
+        long nonce = mutation.hasNonce() ? mutation.getNonce() : HConstants.NO_NONCE;
+        checkCellSizeLimit(region, (Mutation) checkAndMutate.getAction());
+        CheckAndMutateResult result = null;
+        result = region.checkAndMutate(checkAndMutate, nonceGroup, nonce);
+        return result;
+    }
+
+    private void checkCellSizeLimit(final HRegion r, final Mutation m) throws IOException {
+        if (r.maxCellSize > 0) {
+            CellScanner cells = m.cellScanner();
+            while (cells.advance()) {
+                int size = PrivateCellUtil.estimatedSerializedSizeOf((Cell) cells.current());
+                if (size > r.maxCellSize) {
+                    String msg = "Cell[" + cells.current() + "] with size " + size + " exceeds limit of "
+                            + r.maxCellSize + " bytes";
+                    LOG.debug(msg);
+                    throw new DoNotRetryIOException(msg);
+                }
+            }
         }
 
     }
@@ -573,8 +762,9 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
                         LOG.info("No executor executorService; skipping open request");
                     } else {
                         if (region.isMetaRegion()) {
-                            regionServer.executorService.submit(
-                                    new OpenMetaHandler(regionServer, regionServer, region, htd, masterSystemTime));
+                            // regionServer.executorService.submit(
+                            // new OpenMetaHandler(regionServer, regionServer, region, htd,
+                            // masterSystemTime));
                         } else {
                             // // if (regionOpenInfo.getFavoredNodesCount() > 0) {
                             // // regionServer.updateRegionFavoredNodesMapping(region.getEncodedName(),
@@ -586,9 +776,9 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
                             // OpenPriorityRegionHandler(regionServer,
                             // regionServer, region, htd, masterSystemTime));
                             // } else {
-                            regionServer.executorService.submit(
-                                    new OpenRegionHandler(regionServer, regionServer, region, htd,
-                                            masterSystemTime));
+                            // regionServer.executorService.submit(
+                            // new OpenRegionHandler(regionServer, regionServer, region, htd,
+                            // masterSystemTime));
                             // }
                         }
                     }
@@ -606,6 +796,68 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
             }
         }
         return builder.build();
+    }
+
+    /**
+     * Method to account for the size of retained cells and retained data blocks.
+     * 
+     * @param context   rpc call context
+     * @param r         result to add size.
+     * @param lastBlock last block to check whether we need to add the block size in
+     *                  context.
+     * @return an object that represents the last referenced block from this
+     *         response.
+     */
+    Object addSize(RpcCallContext context, Result r, Object lastBlock) {
+        if (context != null && r != null && !r.isEmpty()) {
+            for (org.apache.hadoop.hbase.Cell c : r.rawCells()) {
+                context.incrementResponseCellSize(PrivateCellUtil.estimatedSerializedSizeOf((Cell) c));
+
+                // Since byte buffers can point all kinds of crazy places it's harder to keep
+                // track
+                // of which blocks are kept alive by what byte buffer.
+                // So we make a guess.
+                if (c instanceof ByteBufferExtendedCell) {
+                    ByteBufferExtendedCell bbCell = (ByteBufferExtendedCell) c;
+                    ByteBuffer bb = bbCell.getValueByteBuffer();
+                    if (bb != lastBlock) {
+                        context.incrementResponseBlockSize(bb.capacity());
+                        lastBlock = bb;
+                    }
+                } else {
+                    // We're using the last block being the same as the current block as
+                    // a proxy for pointing to a new block. This won't be exact.
+                    // If there are multiple gets that bounce back and forth
+                    // Then it's possible that this will over count the size of
+                    // referenced blocks. However it's better to over count and
+                    // use two rpcs than to OOME the regionserver.
+                    byte[] valueArray = c.getValueArray();
+                    if (valueArray != lastBlock) {
+                        context.incrementResponseBlockSize(valueArray.length);
+                        lastBlock = valueArray;
+                    }
+                }
+
+            }
+        }
+        return lastBlock;
+    }
+
+    private boolean isClientCellBlockSupport(RpcCallContext context) {
+        return context != null && context.isClientCellBlockSupported();
+    }
+
+    private void addResult(final MutateResponse.Builder builder, final Result result,
+            final HBaseRpcController rpcc, boolean clientCellBlockSupported) {
+        if (result == null)
+            return;
+        if (clientCellBlockSupported) {
+            builder.setResult(ProtobufUtil.toResultNoData(result));
+            rpcc.setCellScanner(result.cellScanner());
+        } else {
+            org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos.Result pbr = ProtobufUtil.toResult(result);
+            builder.setResult(pbr);
+        }
     }
 
     @Override
@@ -674,8 +926,35 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
     @Override
     public ExecuteProceduresResponse executeProcedures(RpcController controller, ExecuteProceduresRequest request)
             throws ServiceException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'executeProcedures'");
+        try {
+            checkOpen();
+            if (request.getOpenRegionCount() > 0) {
+                // Avoid reading from the TableDescritor every time(usually it will read from
+                // the file
+                // system)
+                Map<TableName, TableDescriptor> tdCache = new HashMap<>();
+                request.getOpenRegionList().forEach(req -> executeOpenRegionProcedures(req, tdCache));
+            }
+            if (request.getCloseRegionCount() > 0) {
+                request.getCloseRegionList().forEach(this::executeCloseRegionProcedures);
+            }
+            if (request.getProcCount() > 0) {
+                request.getProcList().forEach(this::executeProcedures);
+            }
+            return ExecuteProceduresResponse.getDefaultInstance();
+        } catch (IOException e) {
+            throw new ServiceException(e);
+        }
+    }
+
+    private void executeOpenRegionProcedures(OpenRegionRequest request,
+            Map<TableName, TableDescriptor> tdCache) {
+    }
+
+    private void executeCloseRegionProcedures(CloseRegionRequest request) {
+    }
+
+    private void executeProcedures(RemoteProcedureRequest request) {
     }
 
     @Override

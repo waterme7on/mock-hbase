@@ -2,16 +2,14 @@ package org.waterme7on.hbase.regionserver;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.apache.hadoop.hbase.regionserver.ChunkCreator.ChunkType;
+import org.waterme7on.hbase.regionserver.ChunkCreator.ChunkType;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.hbase.thirdparty.com.google.common.base.Preconditions;
 
 /**
  * A chunk of memory out of which allocations are sliced.
  */
-@InterfaceAudience.Private
 public abstract class Chunk {
     /** Actual underlying data */
     protected ByteBuffer data;

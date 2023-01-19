@@ -2353,6 +2353,20 @@ public final class PrivateCellUtil {
     }
 
     /**
+     * Sets the given timestamp to the cell.
+     * 
+     * @throws IOException when the passed cell is not of type {@link ExtendedCell}
+     */
+    public static void setTimestamp(org.apache.hadoop.hbase.Cell cell, byte[] ts) throws IOException {
+        if (cell instanceof org.apache.hadoop.hbase.ExtendedCell) {
+            ((org.apache.hadoop.hbase.ExtendedCell) cell).setTimestamp(ts);
+        } else {
+            throw new IOException(
+                    new UnsupportedOperationException("Cell is not of type " + ExtendedCell.class.getName()));
+        }
+    }
+
+    /**
      * Sets the given timestamp to the cell iff current timestamp is
      * {@link HConstants#LATEST_TIMESTAMP}.
      * 
@@ -3013,5 +3027,13 @@ public final class PrivateCellUtil {
      */
     public static Cell createFirstDeleteFamilyCellOnRow(final byte[] row, final byte[] fam) {
         return new FirstOnRowDeleteFamilyCell(row, fam);
+    }
+
+    public static boolean updateLatestStamp(org.apache.hadoop.hbase.Cell cell, byte[] ts) throws IOException {
+        if (cell.getTimestamp() == HConstants.LATEST_TIMESTAMP) {
+            setTimestamp(cell, ts);
+            return true;
+        }
+        return false;
     }
 }

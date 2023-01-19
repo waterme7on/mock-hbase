@@ -6,6 +6,8 @@ import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Abortable;
+import org.apache.hadoop.hbase.ChoreService;
+import org.apache.hadoop.hbase.CoordinatedStateManager;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.NotServingRegionException;
 import org.apache.hadoop.hbase.ServerName;
@@ -112,11 +114,13 @@ public class HRegionServer extends Thread implements RegionServerServices {
 
     private HeapMemoryManager hMemManager;
 
+    private final RegionServerAccounting regionServerAccounting;
+
     // Stub to do region server status calls against the master.
     private volatile RegionServerStatusService.BlockingInterface rssStub;
     // RPC client. Used to make the stub above that does region server status
     // checking.
-    private RpcClient rpcClient;
+    protected RpcClient rpcClient;
 
     // master address tracker
     private final MasterAddressTracker masterAddressTracker;
@@ -215,6 +219,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
             this.shortOperationTimeout = conf.getInt(HConstants.HBASE_RPC_SHORTOPERATION_TIMEOUT_KEY,
                     HConstants.DEFAULT_HBASE_RPC_SHORTOPERATION_TIMEOUT);
             this.executorService = new ExecutorService(getName());
+            regionServerAccounting = new RegionServerAccounting(conf);
             // If no master in cluster, skip trying to track one or look for a cluster
             // status.
             if (!this.masterless) {
@@ -890,7 +895,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
     }
 
     private void initializeThreads() {
-        this.cacheFlusher = new MemStoreFlusher();
+        this.cacheFlusher = new MemStoreFlusher(this.conf, this);
     }
 
     @Override
@@ -1062,14 +1067,17 @@ public class HRegionServer extends Thread implements RegionServerServices {
         return allRegions;
     }
 
-    @Override
     public void registerService(Service service) {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'registerService'");
     }
 
-    BlockingRpcChannel createChannelToServerName(ServerName sn) throws IOException {
+    protected BlockingRpcChannel createChannelToServerName(ServerName sn) throws IOException {
         return this.rpcClient.createBlockingRpcChannel(sn, User.getCurrent(), shortOperationTimeout);
     }
 
+    @Override
+    public RegionServerAccounting getRegionServerAccounting() {
+        return this.regionServerAccounting;
+    }
 }

@@ -6,6 +6,7 @@ import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -17,6 +18,7 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.TableName;
@@ -28,6 +30,7 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.FSProtos;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.fs.HFileSystem;
 
 import com.google.common.primitives.Ints;
 
@@ -517,6 +520,31 @@ public class FSUtils {
 
     public static Path getRegionDirFromTableDir(Path tableDir, String encodedRegionName) {
         return new Path(tableDir, encodedRegionName);
+    }
+
+    /**
+     * Create the specified file on the filesystem. By default, this will:
+     * <ol>
+     * <li>overwrite the file if it exists</li>
+     * <li>apply the umask in the configuration (if it is enabled)</li>
+     * <li>use the fs configured buffer size (or 4096 if not set)</li>
+     * <li>use the configured column family replication or default replication if
+     * {@link ColumnFamilyDescriptorBuilder#DEFAULT_DFS_REPLICATION}</li>
+     * <li>use the default block size</li>
+     * <li>not track progress</li>
+     * </ol>
+     * 
+     * @param conf         configurations
+     * @param fs           {@link FileSystem} on which to write the file
+     * @param path         {@link Path} to the file to write
+     * @param perm         permissions
+     * @param favoredNodes favored data nodes
+     * @return output stream to the created file
+     * @throws IOException if the file cannot be created
+     */
+    public static FSDataOutputStream create(Configuration conf, FileSystem fs, Path path,
+            FsPermission perm, InetSocketAddress[] favoredNodes) throws IOException {
+        return CommonFSUtils.create(fs, path, perm, true);
     }
 
     /**

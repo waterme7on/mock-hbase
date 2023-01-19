@@ -51,12 +51,12 @@ public class ActiveMasterManager extends ZKListener {
         this.infoPort = infoPort;
     }
 
-    ActiveMasterManager(ZKWatcher watcher, ServerName sn, Server master)
+    ActiveMasterManager(ZKWatcher watcher, ServerName sn, HMaster hMaster)
             throws InterruptedIOException {
         super(watcher);
         watcher.registerListener(this);
         this.sn = sn;
-        this.master = master;
+        this.master = hMaster;
         updateBackupMasters();
     }
 

@@ -99,9 +99,6 @@ public abstract class ServerCall<T extends ServerRpcConnection> implements RpcCa
 
     private final Span span;
 
-    // @edu.umd.cs.findbugs.annotations.SuppressWarnings(value =
-    // "NP_NULL_ON_SOME_PATH", justification = "Can't figure why this complaint is
-    // happening... see below")
     ServerCall(int id, BlockingService service, MethodDescriptor md, RequestHeader header,
             Message param, CellScanner cellScanner, T connection, long size, InetAddress remoteAddress,
             long receiveTime, int timeout, ByteBuffAllocator byteBuffAllocator,
@@ -137,9 +134,6 @@ public abstract class ServerCall<T extends ServerRpcConnection> implements RpcCa
      * Call is done. Execution happened and we returned results to client. It is now
      * safe to cleanup.
      */
-    // @edu.umd.cs.findbugs.annotations.SuppressWarnings(value =
-    // "IS2_INCONSISTENT_SYNC", justification = "Presume the lock on processing
-    // request held by caller is protection enough")
     @Override
     public void done() {
         if (this.cellBlockStream != null) {
@@ -499,7 +493,6 @@ public abstract class ServerCall<T extends ServerRpcConnection> implements RpcCa
         this.rpcCallback = callback;
     }
 
-    
     public boolean isRetryImmediatelySupported() {
         return retryImmediatelySupported;
     }

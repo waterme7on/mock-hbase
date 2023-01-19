@@ -7,7 +7,6 @@ import java.util.concurrent.atomic.LongAdder;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.io.util.MemorySizeUtil;
 import org.apache.hadoop.hbase.util.Pair;
-import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * RegionServerAccounting keeps record of some basic real time information about
@@ -16,7 +15,6 @@ import org.apache.yetus.audience.InterfaceAudience;
  * on-heap and off-heap
  * overhead. It also tracks the replay edits per region.
  */
-@InterfaceAudience.Private
 public class RegionServerAccounting {
     // memstore data size
     private final LongAdder globalMemStoreDataSize = new LongAdder();

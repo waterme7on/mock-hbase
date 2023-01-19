@@ -186,4 +186,8 @@ public class ServerManager {
         // TODO: FIX. THIS IS POPULAR CALL.
         return new ArrayList<>(this.onlineServers.keySet());
     }
+
+    public List<ServerName> createDestinationServersList() {
+        return new ArrayList<>(this.onlineServers.keySet());
+    }
 }

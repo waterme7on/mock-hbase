@@ -4,8 +4,10 @@ import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterMetrics;
+import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.TableDescriptor;
+import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
 import org.waterme7on.hbase.Server;
 import org.waterme7on.hbase.TableDescriptors;
 import org.waterme7on.hbase.client.ClusterConnection;
@@ -14,6 +16,10 @@ import org.waterme7on.hbase.procedure2.ProcedureExecutor;
 import com.google.protobuf.Service;
 
 public interface MasterServices extends Server {
+    public LoadBalancer getLoadBalancer();
+
+    public BlockingRpcChannel getRsStub(ServerName serverName) throws IOException;
+
     /** Returns Master's filesystem {@link MasterFileSystem} utility class. */
     MasterFileSystem getMasterFileSystem();
 
