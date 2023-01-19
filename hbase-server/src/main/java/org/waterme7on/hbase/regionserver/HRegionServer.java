@@ -4,6 +4,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Scope;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.hbase.ChoreService;
@@ -32,6 +33,7 @@ import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.RetryCounter;
 import org.apache.hadoop.hbase.util.RetryCounterFactory;
+import org.waterme7on.hbase.Server;
 import org.apache.hadoop.hbase.util.Sleeper;
 import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
 import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
@@ -54,6 +56,7 @@ import org.waterme7on.hbase.master.HMaster;
 import org.waterme7on.hbase.master.MasterRpcServices;
 import org.waterme7on.hbase.util.FSTableDescriptors;
 import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
+import org.waterme7on.hbase.wal.WAL;
 
 import com.google.protobuf.Service;
 
@@ -504,7 +507,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
                     LOG.info("Cluster down, regionserver shutting down");
                     break;
                 }
-                LOG.debug("Running, Server status - " + this.rpcServices.getRpcServer().toString());
+                LOG.debug("Running, Server status - " + this.rpcServices.getRpcServer().toString() + this.toString());
                 // LOG.debug(this.rpcServices.getServices().toString());
                 // the main run loop
                 long now = EnvironmentEdgeManager.currentTime();
@@ -846,6 +849,9 @@ public class HRegionServer extends Thread implements RegionServerServices {
         } finally {
             sleeper.skipSleepCycle();
         }
+
+        WALFactory factory = new WALFactory(conf, serverName.toString(), (Server) this);
+        this.walFactory = factory;
         // TODO ...
 
         startServices();
@@ -1079,5 +1085,39 @@ public class HRegionServer extends Thread implements RegionServerServices {
     @Override
     public RegionServerAccounting getRegionServerAccounting() {
         return this.regionServerAccounting;
+    }
+
+    private volatile WALFactory walFactory;
+    // private LogRoller walRoller;
+
+    @Override
+    public WAL getWAL(RegionInfo regionInfo) throws IOException {
+        try {
+            WAL wal = walFactory.getWAL(regionInfo);
+            // if (this.walRoller != null) {
+            // this.walRoller.addWAL(wal);
+            // }
+            return wal;
+        } catch (Exception ex) {
+            // see HBASE-21751 for details
+            abort("WAL can not clean up after init failed", ex);
+            throw ex;
+        }
+    }
+
+    @Override
+    public FileSystem getFileSystem() {
+        return dataFs;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("OnlineRegions:");
+        for (HRegion region : this.onlineRegions.values()) {
+            sb.append(region.getRegionInfo().getRegionNameAsString());
+            sb.append(",");
+        }
+        return sb.toString();
     }
 }

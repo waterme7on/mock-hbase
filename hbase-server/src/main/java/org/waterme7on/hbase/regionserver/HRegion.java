@@ -48,6 +48,7 @@ import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.client.RegionReplicaUtil;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.RowMutations;
@@ -137,7 +138,7 @@ public class HRegion implements Region {
     final AtomicBoolean closed = new AtomicBoolean(false);
     // set to true if the region is restored from snapshot
     private boolean isRestoredRegion = false;
-
+    private final WAL wal;
     // Last flush time for each Store. Useful when we are flushing for each column
     private final ConcurrentMap<HStore, Long> lastStoreFlushTimeMap = new ConcurrentHashMap<>();
     /*
@@ -156,6 +157,8 @@ public class HRegion implements Region {
     final WriteState writestate = new WriteState();
     protected volatile long lastReplayedOpenRegionSeqId = -1L;
 
+    private long openSeqNum;
+
     public static final String USE_META_CELL_COMPARATOR = "hbase.region.use.meta.cell.comparator";
     public static final boolean DEFAULT_USE_META_CELL_COMPARATOR = false;
 
@@ -170,6 +173,7 @@ public class HRegion implements Region {
                         : CellComparatorImpl.COMPARATOR;
 
         this.conf = conf;
+        this.wal = wal;
         this.fs = new HRegionFileSystem(conf, fs, tableDir, regionInfo);
         this.maxCellSize = conf.getLong(HBASE_MAX_CELL_SIZE_KEY, DEFAULT_MAX_CELL_SIZE);
         this.htableDescriptor = htd;
@@ -411,6 +415,66 @@ public class HRegion implements Region {
             throws IOException {
         return TraceUtil.trace(() -> getRowLockInternal(row, readLock, prevRowLock),
                 () -> createRegionSpan("Region.getRowLock").setAttribute(ROW_LOCK_READ_LOCK_KEY, readLock));
+    }
+
+    public static HRegion openHRegion(RegionInfo regionInfo, TableDescriptor htd, WAL wal, Configuration conf,
+            RegionServerServices rsServices) throws IOException {
+        return openHRegion(CommonFSUtils.getRootDir(conf), regionInfo, htd, wal, conf, rsServices);
+    }
+
+    public static HRegion openHRegion(final Path rootDir, final RegionInfo info,
+            final TableDescriptor htd, final WAL wal, final Configuration conf,
+            final RegionServerServices rsServices)
+            throws IOException {
+        FileSystem fs = null;
+        if (rsServices != null) {
+            fs = rsServices.getFileSystem();
+        }
+        if (fs == null) {
+            fs = rootDir.getFileSystem(conf);
+        }
+        Path tableDir = CommonFSUtils.getTableDir(rootDir, info.getTable());
+        LOG.debug("Opening region: {} from tableDir: {}", info, tableDir);
+        return openHRegionFromTableDir(conf, fs, tableDir, info, htd, wal, rsServices);
+    }
+
+    public static HRegion openHRegionFromTableDir(final Configuration conf, final FileSystem fs,
+            final Path tableDir, final RegionInfo info, final TableDescriptor htd, final WAL wal,
+            final RegionServerServices rsServices)
+            throws IOException {
+        Objects.requireNonNull(info, "RegionInfo cannot be null");
+        HRegion r = HRegion.newHRegion(tableDir, wal, fs, conf, info, htd, rsServices);
+        return r.openHRegion();
+    }
+
+    private HRegion openHRegion() throws IOException {
+        this.openSeqNum = initialize(null);
+        // The openSeqNum must be increased every time when a region is assigned, as we
+        // rely on it to
+        // determine whether a region has been successfully reopened. So here we always
+        // write open
+        // marker, even if the table is read only.
+        try {
+            if (wal != null && getRegionServerServices() != null
+                    && RegionReplicaUtil.isDefaultReplica(getRegionInfo())) {
+                // writeRegionOpenMarker(wal, openSeqNum);
+                ////////////////////////////////////////
+            }
+        } catch (Throwable t) {
+            // By coprocessor path wrong region will open failed,
+            // MetricsRegionWrapperImpl is already init and not close,
+            // add region close when open failed
+            try {
+                // It is not required to write sequence id file when region open is failed.
+                // Passing true to skip the sequence id file write.
+                this.close();
+            } catch (Throwable e) {
+                LOG.warn("Open region: {} failed. Try close region but got exception ",
+                        this.getRegionInfo(), e);
+            }
+            throw t;
+        }
+        return this;
     }
 
     // will be override in tests

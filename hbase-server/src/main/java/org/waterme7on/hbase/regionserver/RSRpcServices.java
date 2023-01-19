@@ -127,6 +127,7 @@ import org.slf4j.LoggerFactory;
 import org.waterme7on.hbase.master.MasterRpcServices;
 import org.waterme7on.hbase.regionserver.handler.OpenMetaHandler;
 import org.waterme7on.hbase.regionserver.handler.OpenRegionHandler;
+import org.waterme7on.hbase.util.CancelableProgressable;
 import org.waterme7on.hbase.master.HMaster;
 
 import java.io.IOException;
@@ -761,25 +762,21 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
                     if (regionServer.executorService == null) {
                         LOG.info("No executor executorService; skipping open request");
                     } else {
-                        if (region.isMetaRegion()) {
-                            // regionServer.executorService.submit(
-                            // new OpenMetaHandler(regionServer, regionServer, region, htd,
-                            // masterSystemTime));
-                        } else {
-                            // // if (regionOpenInfo.getFavoredNodesCount() > 0) {
-                            // // regionServer.updateRegionFavoredNodesMapping(region.getEncodedName(),
-                            // // regionOpenInfo.getFavoredNodesList());
-                            // // }
-                            // if (htd.getPriority() >= HConstants.ADMIN_QOS ||
-                            // region.getTable().isSystemTable()) {
-                            // regionServer.executorService.submit(new
-                            // OpenPriorityRegionHandler(regionServer,
-                            // regionServer, region, htd, masterSystemTime));
-                            // } else {
-                            // regionServer.executorService.submit(
-                            // new OpenRegionHandler(regionServer, regionServer, region, htd,
-                            // masterSystemTime));
-                            // }
+                        HRegion r = null;
+                        try {
+                            // Instantiate the region. This also periodically tickles OPENING
+                            // state so master doesn't timeout this region in transition.
+                            r = HRegion.openHRegion(region, htd,
+                                    this.regionServer.getWAL(region),
+                                    this.regionServer.getConfiguration(), this.regionServer);
+
+                            updateMeta(r, masterSystemTime);
+                            this.regionServer.addRegion(r);
+                        } catch (Throwable t) {
+                            // We failed open. Our caller will see the 'null' return value
+                            // and transition the node back to FAILED_OPEN. If that fails,
+                            // we rely on the Timeout Monitor in the master to reassign.
+                            LOG.error("Failed open of region=" + r, t);
                         }
                     }
                 }
@@ -796,6 +793,11 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
             }
         }
         return builder.build();
+    }
+
+    boolean updateMeta(HRegion region, long masterSystemTime) {
+        // TODO
+        return true;
     }
 
     /**

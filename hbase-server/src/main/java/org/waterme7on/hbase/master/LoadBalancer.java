@@ -13,13 +13,14 @@ public class LoadBalancer {
 
     private final Configuration conf;
 
+    private int serverIndex = 0;
+
     LoadBalancer(Configuration conf) {
         this.conf = conf;
     }
 
     Map<ServerName, List<RegionInfo>> roundRobinAssignment(List<RegionInfo> hris, List<ServerName> servers) {
         Map<ServerName, List<RegionInfo>> assignments = new HashMap<>();
-        int serverIndex = 0;
         for (RegionInfo hri : hris) {
             ServerName sn = servers.get(serverIndex);
             List<RegionInfo> regions = assignments.get(sn);

@@ -123,13 +123,13 @@ public class AssignmentManager {
             return;
         }
         regionStates.addRegionToServer(regionNode);
+        LOG.debug("Current region states: " + regionStates.getRegionAssignments());
         LOG.info("Opening region " + regionInfo.getRegionNameAsString() + " on " + serverName);
         RpcController controller = null;
         AdminService.BlockingInterface admin = AdminService.newBlockingStub(this.master.getRsStub(serverName));
         ProtobufUtil.openRegion(controller,
                 admin, serverName,
                 regionInfo);
-
     }
 
     /**
@@ -303,6 +303,7 @@ public class AssignmentManager {
     private static TableDescriptor writeFsLayout(Path rootDir, Configuration conf)
             throws IOException {
         LOG.info("BOOTSTRAP: creating hbase:meta region");
+        LOG.debug("writeFsLayout at {}", rootDir);
         FileSystem fs = rootDir.getFileSystem(conf);
         Path tableDir = CommonFSUtils.getTableDir(rootDir, TableName.META_TABLE_NAME);
         if (fs.exists(tableDir) && !deleteMetaTableDirectoryIfPartial(fs, tableDir)) {
@@ -313,7 +314,9 @@ public class AssignmentManager {
         // not make it in first place. Turn off block caching for bootstrap.
         // Enable after.
         TableDescriptor metaDescriptor = FSTableDescriptors.tryUpdateAndGetMetaTableDescriptor(conf, fs, rootDir);
-        HRegion.createHRegion(RegionInfoBuilder.FIRST_META_REGIONINFO, rootDir, conf, metaDescriptor, null).close();
+        // HRegion.createHRegion(RegionInfoBuilder.FIRST_META_REGIONINFO, rootDir, conf,
+        // metaDescriptor, null)
+        // .close();
         return metaDescriptor;
     }
 

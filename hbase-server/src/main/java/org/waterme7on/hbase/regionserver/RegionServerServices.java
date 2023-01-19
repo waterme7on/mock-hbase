@@ -1,13 +1,17 @@
 package org.waterme7on.hbase.regionserver;
 
+import java.io.IOException;
 import java.util.concurrent.ConcurrentMap;
 import org.waterme7on.hbase.Server;
-
+import org.waterme7on.hbase.wal.WAL;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionStateTransition.TransitionCode;
 
 public interface RegionServerServices extends Server, OnlineRegions {
     boolean isClusterUp();
+
+    WAL getWAL(RegionInfo regionInfo) throws IOException;
 
     public ConcurrentMap<byte[], Boolean> getRegionsInTransitionInRS();
 
@@ -85,5 +89,7 @@ public interface RegionServerServices extends Server, OnlineRegions {
             return procIds;
         }
     }
+
+    FileSystem getFileSystem();
 
 }
