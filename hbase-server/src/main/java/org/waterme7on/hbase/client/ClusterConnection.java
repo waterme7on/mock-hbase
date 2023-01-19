@@ -1,6 +1,9 @@
 package org.waterme7on.hbase.client;
 
 import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.MasterProtos;
+
+import java.io.IOException;
 
 public interface ClusterConnection extends Connection {
     /**
@@ -9,5 +12,7 @@ public interface ClusterConnection extends Connection {
      * Connection instance.
      */
     String HBASE_CLIENT_CONNECTION_IMPL = "hbase.client.connection.impl";
+
+    MasterProtos.MasterService.BlockingInterface getMaster() throws IOException;
 
 }

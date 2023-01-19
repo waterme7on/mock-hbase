@@ -109,7 +109,6 @@ public class HMaster extends HRegionServer implements MasterServices {
     private RegionServerList rsListStorage;
     // server manager to deal with region server info
     private volatile ServerManager serverManager;
-    private HashMap<TableName, ServerName> tableToServer = new HashMap<>();
     // flag set after master services are started,
     // initialization may have not completed yet.
     volatile boolean serviceStarted = false;
@@ -631,25 +630,12 @@ public class HMaster extends HRegionServer implements MasterServices {
             final long nonce) throws IOException {
         checkInitialized();
         TableDescriptor desc = tableDescriptor;
-        // String namespace = desc.getTableName().getNamespaceAsString();
-        // RegionInfo[] newRegions = ModifyRegionUtils.createRegionInfos(desc,
-        // splitKeys);
-        if (this.tableToServer.containsKey(desc.getTableName())) {
-            return 0;
-        }
-        ServerName selected = selectServer();
-        this.tableToServer.put(desc.getTableName(), selected);
-        LOG.debug(
-                "createTable: " + desc.getTableName() + " stored to " + selected);
-        return 1;
+        RegionInfo[] newRegions = ModifyRegionUtils.createRegionInfos(desc, splitKeys);
+        return this.assignmentManager.createTable(desc, newRegions);
     }
 
     public long deleteTable(final TableName tableName, final long nonceGroup, final long nonce) throws IOException {
         checkInitialized();
-        if (!this.tableToServer.containsKey(tableName)) {
-            return 0;
-        }
-        this.tableToServer.remove(tableName);
         LOG.debug("deleteTable: " + tableName + " removed");
         return 1;
     }

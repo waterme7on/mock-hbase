@@ -255,6 +255,7 @@ public abstract class RpcServer implements RpcServerInterface, ConfigurationObse
             // get an instance of the method arg type
             HBaseRpcController controller = new HBaseRpcControllerImpl(call.getCellScanner());
             controller.setCallTimeout(call.getTimeout());
+            LOG.debug("[xxxxx]Call: {}, {}", md, param);
             Message result = call.getService().callBlockingMethod(md, controller, param);
             long receiveTime = call.getReceiveTime();
             long startTime = call.getStartTime();

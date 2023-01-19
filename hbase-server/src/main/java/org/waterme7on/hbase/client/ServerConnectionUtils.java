@@ -91,7 +91,9 @@ public final class ServerConnectionUtils {
         if (user == null) {
             user = UserProvider.instantiate(conf).getCurrent();
         }
-        return new ShortCircuitingClusterConnection(conf, User.getCurrent(), serverName, null, null,
+        return new ShortCircuitingClusterConnection(conf, User.getCurrent(), serverName,
+                rpcServices,
+                rpcServices2,
                 registry);
     }
 

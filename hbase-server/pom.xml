@@ -103,6 +103,11 @@
             <artifactId>hbase-zookeeper</artifactId>
             <version>2.5.1</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.hbase</groupId>
+            <artifactId>hbase-client</artifactId>
+            <version>2.5.1</version>
+        </dependency>
     </dependencies>
     <properties>
         <maven.javadoc.skip>true</maven.javadoc.skip>

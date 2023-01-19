@@ -2,6 +2,7 @@ package org.waterme7on.hbase.master;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,12 +16,15 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
+import org.apache.hadoop.hbase.HBaseIOException;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.client.RegionInfoBuilder;
+import org.apache.hadoop.hbase.client.RegionReplicaUtil;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.io.hfile.HFile;
+import org.apache.hadoop.hbase.master.RegionState;
 import org.apache.hadoop.hbase.master.assignment.RegionStateNode;
 import org.apache.hadoop.hbase.master.assignment.RegionStates;
 import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
@@ -31,14 +35,17 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.AdminServic
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Threads;
+import org.apache.hadoop.hbase.util.ModifyRegionUtils.RegionFillTask;
 import org.apache.hbase.thirdparty.com.google.protobuf.RpcController;
 import org.apache.zookeeper.server.admin.AdminServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.client.MetaTableAccessor;
 import org.waterme7on.hbase.coprocessor.StringUtils;
 import org.waterme7on.hbase.regionserver.HRegion;
 import org.waterme7on.hbase.regionserver.HRegionFactory.MasterRegion;
 import org.waterme7on.hbase.util.FSTableDescriptors;
+import org.waterme7on.hbase.util.ModifyRegionUtils;
 
 public class AssignmentManager {
     private static final Logger LOG = LoggerFactory.getLogger(AssignmentManager.class);
@@ -318,6 +325,98 @@ public class AssignmentManager {
         // metaDescriptor, null)
         // .close();
         return metaDescriptor;
+    }
+
+    public long createTable(final TableDescriptor td, final RegionInfo[] regions) throws IOException {
+        List<RegionInfo> newRegions = null;
+        newRegions = createFsLayout(td, regions);
+        newRegions = addTableToMeta(td, newRegions);
+        this.master.getTableDescriptors().update(td);
+        // RegionStateNode node = queueAssign(newRegions);
+        assignRegions(newRegions);
+        return 1;
+    }
+
+    private void assignRegions(final List<RegionInfo> regions) {
+        List<ServerName> servers = master.getServerManager().createDestinationServersList();
+        for (int i = 0; servers.size() < 1; ++i) {
+            // Report every fourth time around this loop; try not to flood log.
+            if (i % 4 == 0) {
+                LOG.warn("No servers available; cannot place " + regions.size() + " unassigned regions.");
+            }
+
+            if (!isRunning()) {
+                LOG.debug("Stopped! Dropping assign of " + regions.size() + " queued regions.");
+                return;
+            }
+            Threads.sleep(250);
+            servers = master.getServerManager().createDestinationServersList();
+        }
+        try {
+            // Assign user regions
+            Map<ServerName, List<RegionInfo>> plan = this.master.getLoadBalancer().roundRobinAssignment(
+                    regions,
+                    servers);
+
+            if (plan.isEmpty()) {
+                throw new IOException("unable to compute plans for regions=" + regions.size());
+            }
+            for (Map.Entry<ServerName, List<RegionInfo>> entry : plan.entrySet()) {
+                final ServerName server = entry.getKey();
+                for (RegionInfo rf : entry.getValue()) {
+                    final RegionStateNode regionNode = regionStates.getOrCreateRegionStateNode(rf);
+                    LOG.debug("assign {} to {}", rf.getRegionNameAsString(), server);
+                    try {
+                        regionNode.setRegionLocation(server);
+                        openRegion(regionNode);
+
+                    } catch (Exception e) {
+                        LOG.error("Failed to open region " + rf.getRegionNameAsString(), e);
+                        queueAssign(regionNode);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.error("Failed to assign regions", e);
+        }
+    }
+
+    private List<RegionInfo> createFsLayout(final TableDescriptor tableDescriptor,
+            final RegionInfo[] newRegions) throws IOException {
+        ModifyRegionUtils.RegionFillTask t = null;
+        return ModifyRegionUtils.createRegions(conf, CommonFSUtils.getRootDir(conf), tableDescriptor, newRegions, t);
+    }
+
+    protected List<RegionInfo> addTableToMeta(
+            final TableDescriptor tableDescriptor, final List<RegionInfo> regions) throws IOException {
+        assert (regions != null && regions.size() > 0) : "expected at least 1 region, got " + regions;
+
+        // Add replicas if needed
+        // we need to create regions with replicaIds starting from 1
+        List<RegionInfo> newRegions = RegionReplicaUtil.addReplicas(regions, 1, tableDescriptor.getRegionReplication());
+
+        // Add regions to META
+        addRegionsToMeta(tableDescriptor, newRegions);
+
+        // Setup replication for region replicas if needed
+        if (tableDescriptor.getRegionReplication() > 1) {
+            try {
+                // TODO replication
+                // ServerRegionReplicaUtil.setupRegionReplicaReplication(env.getMasterServices());
+            } catch (Exception e) {
+                throw new HBaseIOException(e);
+            }
+        }
+        return newRegions;
+    }
+
+    /**
+     * Add the specified set of regions to the hbase:meta table.
+     */
+    private void addRegionsToMeta(final TableDescriptor tableDescriptor, final List<RegionInfo> regionInfos)
+            throws IOException {
+        MetaTableAccessor.addRegionsToMeta(this.master.getConnection(), regionInfos,
+                tableDescriptor.getRegionReplication());
     }
 
     private static boolean deleteMetaTableDirectoryIfPartial(FileSystem rootDirectoryFs,

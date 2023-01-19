@@ -507,7 +507,7 @@ public class HRegionServer extends Thread implements RegionServerServices {
                     LOG.info("Cluster down, regionserver shutting down");
                     break;
                 }
-                LOG.debug("Running, Server status - " + this.rpcServices.getRpcServer().toString() + this.toString());
+                LOG.debug("Running, Server status - " + this.rpcServices.getRpcServer().toString() + " " + this.toString());
                 // LOG.debug(this.rpcServices.getServices().toString());
                 // the main run loop
                 long now = EnvironmentEdgeManager.currentTime();
@@ -1113,11 +1113,12 @@ public class HRegionServer extends Thread implements RegionServerServices {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("OnlineRegions:");
+        sb.append("OnlineRegions:{");
         for (HRegion region : this.onlineRegions.values()) {
             sb.append(region.getRegionInfo().getRegionNameAsString());
             sb.append(",");
         }
+        sb.append("}");
         return sb.toString();
     }
 }
