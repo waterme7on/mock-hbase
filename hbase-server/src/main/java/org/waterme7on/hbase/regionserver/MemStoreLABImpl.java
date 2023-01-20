@@ -15,6 +15,7 @@ import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.ExtendedCell;
 import org.apache.hadoop.hbase.KeyValueUtil;
 import org.apache.hadoop.hbase.nio.RefCnt;
+import org.apache.hadoop.hbase.regionserver.CompactingMemStore.IndexType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -243,8 +244,7 @@ public class MemStoreLABImpl implements MemStoreLAB {
      * 
      * @see #copyToChunkCell(Cell, ByteBuffer, int, int)
      */
-    private static Cell copyBBECToChunkCell(ByteBufferExtendedCell cell, ByteBuffer buf,
-            int offset,
+    private static Cell copyBBECToChunkCell(ByteBufferExtendedCell cell, ByteBuffer buf, int offset,
             int len) {
         int tagsLen = cell.getTagsLength();
         cell.write(buf, offset);
@@ -264,9 +264,9 @@ public class MemStoreLABImpl implements MemStoreLAB {
             // reading the tagLength stored in the backing buffer. The Memstore addition of
             // every Cell
             // call getTagsLength().
-            return (Cell) new NoTagByteBufferChunkKeyValue(buf, offset, len, sequenceId);
+            return new NoTagByteBufferChunkKeyValue(buf, offset, len, sequenceId);
         } else {
-            return (Cell) new ByteBufferChunkKeyValue(buf, offset, len, sequenceId);
+            return new ByteBufferChunkKeyValue(buf, offset, len, sequenceId);
         }
     }
 

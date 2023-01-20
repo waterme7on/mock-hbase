@@ -50,7 +50,7 @@ import org.apache.hbase.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hbase.thirdparty.com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.waterme7on.hbase.PrivateCellUtil;
+import org.apache.hadoop.hbase.PrivateCellUtil;
 import org.waterme7on.hbase.ipc.RpcCall;
 import org.waterme7on.hbase.ipc.RpcServer;
 import org.waterme7on.hbase.monitoring.MonitoredTask;
@@ -886,7 +886,7 @@ public class HRegion implements Region {
                         } else if (result.size() == 1) {
                             Cell kv = result.get(0);
                             cellTs = kv.getTimestamp();
-                            int compareResult = PrivateCellUtil.compareValue((org.waterme7on.hbase.Cell) kv,
+                            int compareResult = PrivateCellUtil.compareValue((Cell) kv,
                                     comparator);
                             matches = matches(op, compareResult);
                         }
