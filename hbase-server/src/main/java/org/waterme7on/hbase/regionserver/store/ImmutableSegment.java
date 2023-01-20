@@ -4,7 +4,6 @@ import java.util.Collections;
 import java.util.List;
 import org.apache.hadoop.hbase.CellComparator;
 import org.apache.hadoop.hbase.regionserver.CellSet;
-import org.apache.hadoop.hbase.regionserver.SnapshotSegmentScanner;
 import org.apache.hadoop.hbase.util.ClassSize;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
@@ -83,13 +82,7 @@ public abstract class ImmutableSegment extends Segment {
         return res;
     }
 
-    /**
-     * We create a new {@link SnapshotSegmentScanner} to increase the reference
-     * count of
-     * {@link MemStoreLABImpl} used by this segment.
-     */
     List<KeyValueScanner> getSnapshotScanners() {
-        // return Collections.singletonList(new SnapshotSegmentScanner(this));
         return null;
     }
 

@@ -1,5 +1,8 @@
 package org.waterme7on.hbase.regionserver;
 
+import org.waterme7on.hbase.regionserver.store.DefaultMemStore;
+import org.waterme7on.hbase.regionserver.store.StoreEngine;
+import org.waterme7on.hbase.regionserver.store.MemStore;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hbase.Cell;
@@ -9,15 +12,11 @@ import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.ColumnFamilyDescriptor;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
-import org.apache.hadoop.hbase.regionserver.CompactingMemStore;
-import org.apache.hadoop.hbase.regionserver.DefaultMemStore;
 import org.apache.hadoop.hbase.regionserver.HStoreFile;
-import org.apache.hadoop.hbase.regionserver.MemStore;
 import org.apache.hadoop.hbase.util.ReflectionUtils;
 import org.apache.hbase.thirdparty.com.google.common.collect.ImmutableCollection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.waterme7on.hbase.regionserver.store.StoreEngine;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.OptionalDouble;
@@ -51,21 +50,6 @@ public class HStore implements Store {
     private MemStore getMemstore() {
 
         MemStore ms = null;
-        // Check if in-memory-compaction configured. Note MemoryCompactionPolicy is an
-        // enum!
-        MemoryCompactionPolicy inMemoryCompaction = null;
-        if (this.getTableName().isSystemTable()) {
-            inMemoryCompaction = MemoryCompactionPolicy
-                    .valueOf(conf.get("hbase.systemtables.compacting.memstore.type", "NONE").toUpperCase());
-        } else {
-            inMemoryCompaction = getColumnFamilyDescriptor().getInMemoryCompaction();
-        }
-        if (inMemoryCompaction == null) {
-            inMemoryCompaction = MemoryCompactionPolicy
-                    .valueOf(conf.get(CompactingMemStore.COMPACTING_MEMSTORE_TYPE_KEY,
-                            CompactingMemStore.COMPACTING_MEMSTORE_TYPE_DEFAULT).toUpperCase());
-        }
-
         Class<? extends MemStore> memStoreClass = conf.getClass(MEMSTORE_CLASS_NAME, DefaultMemStore.class,
                 MemStore.class);
         ms = ReflectionUtils.newInstance(memStoreClass,
@@ -336,7 +320,7 @@ public class HStore implements Store {
         LOG.debug("upsert: {}", cells.toString());
         this.storeEngine.readLock();
         try {
-            this.memstore.upsert(cells, readpoint, getOriginMemStoreSizing(memstoreSizing));
+            this.memstore.upsert(cells, readpoint, memstoreSizing);
         } finally {
             this.storeEngine.readUnlock();
         }
@@ -355,7 +339,9 @@ public class HStore implements Store {
             // this.getTableName(), this.getRegionInfo().getEncodedName(),
             // this.getColumnFamilyName());
             // }
-            this.memstore.add(cells, getOriginMemStoreSizing(memstoreSizing));
+            LOG.debug("HStore.add before {}", this.memstore.toString());
+            this.memstore.add(cells, memstoreSizing);
+            LOG.debug("HStore.add after  {}", this.memstore.toString());
         } finally {
             storeEngine.readUnlock();
             // currentParallelPutCount.decrementAndGet();
