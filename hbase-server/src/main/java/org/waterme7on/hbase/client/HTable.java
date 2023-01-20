@@ -18,12 +18,15 @@ import org.apache.hadoop.hbase.client.trace.TableOperationSpanBuilder;
 import org.apache.hadoop.hbase.shaded.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.trace.TraceUtil;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
+import org.apache.hadoop.hbase.ServerName;
 import org.apache.hbase.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import org.apache.hadoop.hbase.ipc.RpcControllerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos.*;
 
 public class HTable implements Table {
 
@@ -95,11 +98,20 @@ public class HTable implements Table {
 
             TraceUtil.trace(() -> {
                 validatePut(put);
-                HRegionLocation loc = connection.locateRegion(tableName, put.getRow(), false, false, 0).getRegionLocation();
-                ClientProtos.MutateRequest request =
-                        RequestConverter.buildMutateRequest(loc.getRegion().getRegionName(), put);
-                LOG.debug("HTable.put - {}", loc.toString());
-                ClientProtos.ClientService.BlockingInterface stub = (ClientProtos.ClientService.BlockingInterface) this.connection.getClient(loc.getServerName());
+                TableLocationRequest tableMapRequest = TableLocationRequest.newBuilder()
+                        .setTableName(tableName.getNameAsString()).build();
+                TableLocationService.BlockingInterface rs = (TableLocationService.BlockingInterface) this.connection
+                        .getTableMapService();
+                TableLocationResponse tableMapResponse = rs.tableLocation(rpcControllerFactory.newController(),
+                        tableMapRequest);
+                LOG.debug(tableMapResponse.getRegionName());
+                LOG.debug(tableMapResponse.getServerName());
+
+                
+                ClientProtos.MutateRequest request = RequestConverter
+                        .buildMutateRequest(Bytes.toBytes(tableMapResponse.getRegionName()), put);
+                ClientProtos.ClientService.BlockingInterface stub = (ClientProtos.ClientService.BlockingInterface) this.connection
+                        .getClient(ServerName.parseServerName(tableMapResponse.getServerName()));
                 stub.mutate(rpcControllerFactory.newController(), request);
                 LOG.debug("HTable.put - " + put.toString());
             }, "HTable.put");

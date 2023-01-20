@@ -24,12 +24,15 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.MasterProtos;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.ConcurrentMapUtils;
+import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
+import org.apache.hadoop.hbase.zookeeper.ZKWatcher;
 import org.apache.hbase.thirdparty.com.google.common.base.Throwables;
 import org.apache.hbase.thirdparty.com.google.protobuf.BlockingRpcChannel;
 import org.apache.hbase.thirdparty.com.google.protobuf.ServiceException;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos;
 
 public class ConnectionImplementation implements ClusterConnection {
     private static final Logger LOG = LoggerFactory.getLogger(ConnectionImplementation.class);
@@ -64,6 +67,8 @@ public class ConnectionImplementation implements ClusterConnection {
     private final RpcRetryingCallerFactory rpcCallerFactory;
 
     private final RpcControllerFactory rpcControllerFactory;
+    private MasterAddressTracker masterAddressTracker;
+    private ZKWatcher zookeeper;
 
     /**
      * constructor
@@ -72,6 +77,10 @@ public class ConnectionImplementation implements ClusterConnection {
      */
     ConnectionImplementation(Configuration conf, ExecutorService pool, User user) throws IOException {
         this(conf, pool, user, null);
+        this.zookeeper = new ZKWatcher(conf, "Client", this,
+                false);
+        masterAddressTracker = new MasterAddressTracker(zookeeper, this);
+        masterAddressTracker.start();
     }
 
     /**
@@ -82,12 +91,17 @@ public class ConnectionImplementation implements ClusterConnection {
             ConnectionRegistry registry) throws IOException {
         this.conf = conf;
         this.user = user;
+
         this.closed = false;
         this.batchPool = (ThreadPoolExecutor) pool;
         this.registry = registry;
+        this.zookeeper = new ZKWatcher(conf, "Client", this,
+                false);
         this.connectionConfig = new ConnectionConfiguration(conf);
         this.metaReplicaCallTimeoutScanInMicroSecond = connectionConfig.getMetaReplicaCallTimeoutMicroSecondScan();
         this.rpcTimeout = conf.getInt(HConstants.HBASE_RPC_TIMEOUT_KEY, HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
+        masterAddressTracker = new MasterAddressTracker(zookeeper, this);
+        masterAddressTracker.start();
 
         // how many times to try, one more than max *retry* time
         this.numTries = (connectionConfig.getRetriesNumber());
@@ -153,8 +167,22 @@ public class ConnectionImplementation implements ClusterConnection {
 
     @Override
     public Admin getAdmin() throws IOException {
-        // TODO Auto-generated method stub
         return null;
+        // return getAdmin(get(registry.getActiveMaster()));
+    }
+
+    @Override
+    public AdminProtos.AdminService.BlockingInterface getMasterAdmin() throws IOException {
+        return getAdmin(get(registry.getActiveMaster()));
+    }
+
+    @Override
+    public AdminProtos.AdminService.BlockingInterface getAdmin(ServerName serverName) throws IOException {
+        String key = getStubKey(AdminProtos.AdminService.BlockingInterface.class.getName(), serverName);
+        return (AdminProtos.AdminService.BlockingInterface) computeIfAbsentEx(stubs, key, () -> {
+            BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(serverName, user, rpcTimeout);
+            return AdminProtos.AdminService.newBlockingStub(channel);
+        });
     }
 
     @Override
@@ -443,6 +471,16 @@ public class ConnectionImplementation implements ClusterConnection {
     @Override
     public RegionLocations locateRegion(TableName tableName) throws IOException {
         // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'locateRegion'");
+        return null;
+    }
+
+    @Override
+    public TableMapProtos.TableLocationService.BlockingInterface getTableMapService() throws IOException {
+        ServerName master = masterAddressTracker.getMasterAddress();
+        String key = getStubKey(TableMapProtos.TableLocationService.BlockingInterface.class.getName(), master);
+        return (TableMapProtos.TableLocationService.BlockingInterface) computeIfAbsentEx(stubs, key, () -> {
+            BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(master, user, rpcTimeout);
+            return TableMapProtos.TableLocationService.newBlockingStub(channel);
+        });
     }
 }
