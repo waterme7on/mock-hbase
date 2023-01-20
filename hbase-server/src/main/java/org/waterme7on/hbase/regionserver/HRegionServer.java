@@ -49,6 +49,7 @@ import org.waterme7on.hbase.master.MasterRpcServices;
 import org.waterme7on.hbase.util.FSTableDescriptors;
 import org.waterme7on.hbase.util.NettyEventLoopGroupConfig;
 import org.waterme7on.hbase.wal.WAL;
+import org.waterme7on.hbase.wal.WALFactory;
 
 import com.google.protobuf.Service;
 
@@ -198,7 +199,6 @@ public class HRegionServer extends Thread implements RegionServerServices {
             this.rpcServices = createRpcServices();
 
             initializeFileSystem();
-
             this.zooKeeper = new ZKWatcher(conf, getProcessName() + ":" + rpcServices.isa.getPort(), this,
                     canCreateBaseZNode());
             String hostName = StringUtils.isBlank(useThisHostnameInstead)

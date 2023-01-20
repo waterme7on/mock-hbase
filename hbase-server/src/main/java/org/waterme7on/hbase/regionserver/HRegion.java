@@ -39,11 +39,14 @@ import org.apache.hadoop.hbase.filter.ByteArrayComparable;
 import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.regionserver.*;
+import org.apache.hadoop.hbase.regionserver.MultiVersionConcurrencyControl.WriteEntry;
 import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.*;
+import org.apache.hadoop.hbase.wal.WALKeyImpl;
 
 import io.opentelemetry.api.trace.Span;
 import org.waterme7on.hbase.wal.WALEdit;
+import org.apache.hbase.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hbase.thirdparty.com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,6 +76,9 @@ import org.waterme7on.hbase.wal.WAL;
 *          --server-name <---- The WAL dir
 * */
 public class HRegion implements Region {
+    public static final String WAL_HSYNC_CONF_KEY = "hbase.wal.hsync";
+    public static final boolean DEFAULT_WAL_HSYNC = false;
+
     private static final Logger LOG = LoggerFactory.getLogger(HRegion.class);
 
     public static final String HBASE_MAX_CELL_SIZE_KEY = "hbase.server.keyvalue.maxsize";
@@ -81,13 +87,13 @@ public class HRegion implements Region {
     public static final String HBASE_REGIONSERVER_MINIBATCH_SIZE = "hbase.regionserver.minibatch.size";
     public static final int DEFAULT_HBASE_REGIONSERVER_MINIBATCH_SIZE = 20000;
     private final int miniBatchSize;
-
+    private RegionServerAccounting rsAccounting;
     // Used to guard closes
     final ReentrantReadWriteLock lock;
     public static final String FAIR_REENTRANT_CLOSE_LOCK = "hbase.regionserver.fair.region.close.lock";
     public static final boolean DEFAULT_FAIR_REENTRANT_CLOSE_LOCK = true;
     /** Conf key for the periodic flush interval */
-
+    private final Durability regionDurability;
     // If updating multiple rows in one call, wait longer,
     // i.e. waiting for busyWaitDuration * # of rows. However,
     // we can limit the max multiplier.
@@ -139,7 +145,9 @@ public class HRegion implements Region {
     // normally true,
     // but may be false when thread is transiting a critical section.
     final ConcurrentHashMap<Thread, Boolean> regionLockHolders;
-
+    // Stores the replication scope of the various column families of the table
+    // that has non-default scope
+    private final NavigableMap<byte[], Integer> replicationScope = new TreeMap<>(Bytes.BYTES_COMPARATOR);
     private long blockingMemStoreSize;
     final AtomicBoolean closed = new AtomicBoolean(false);
     // set to true if the region is restored from snapshot
@@ -164,6 +172,7 @@ public class HRegion implements Region {
     protected volatile long lastReplayedOpenRegionSeqId = -1L;
 
     private long openSeqNum;
+    private MultiVersionConcurrencyControl mvcc;
 
     public static final String USE_META_CELL_COMPARATOR = "hbase.region.use.meta.cell.comparator";
     public static final boolean DEFAULT_USE_META_CELL_COMPARATOR = false;
@@ -186,6 +195,21 @@ public class HRegion implements Region {
         this.maxCellSize = conf.getLong(HBASE_MAX_CELL_SIZE_KEY, DEFAULT_MAX_CELL_SIZE);
         this.htableDescriptor = htd;
         this.rsServices = rsServices;
+        if (this.rsServices != null) {
+            this.rsAccounting = this.rsServices.getRegionServerAccounting();
+        }
+        this.mvcc = new MultiVersionConcurrencyControl(getRegionInfo().getShortNameToLog());
+        /**
+         * This is the global default value for durability. All tables/mutations not
+         * defining a
+         * durability or using USE_DEFAULT will default to this value.
+         */
+        boolean forceSync = conf.getBoolean(WAL_HSYNC_CONF_KEY, DEFAULT_WAL_HSYNC);
+        Durability defaultDurability = forceSync ? Durability.FSYNC_WAL : Durability.SYNC_WAL;
+        this.regionDurability = this.htableDescriptor.getDurability() == Durability.USE_DEFAULT
+                ? defaultDurability
+                : this.htableDescriptor.getDurability();
+
         this.miniBatchSize = conf.getInt(HBASE_REGIONSERVER_MINIBATCH_SIZE, DEFAULT_HBASE_REGIONSERVER_MINIBATCH_SIZE);
         this.busyWaitDuration = conf.getLong("hbase.busy.wait.duration", DEFAULT_BUSY_WAIT_DURATION);
         this.maxBusyWaitMultiplier = conf.getInt("hbase.busy.wait.multiplier.max", 2);
@@ -294,6 +318,52 @@ public class HRegion implements Region {
     public boolean isMergeable() {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'isMergeable'");
+    }
+
+    /**
+     * Increase the size of mem store in this region and the size of global mem
+     * store
+     */
+    private void incMemStoreSize(MemStoreSize mss) {
+        incMemStoreSize(mss.getDataSize(), mss.getHeapSize(), mss.getOffHeapSize(),
+                mss.getCellsCount());
+    }
+
+    void incMemStoreSize(long dataSizeDelta, long heapSizeDelta, long offHeapSizeDelta,
+            int cellsCountDelta) {
+        if (this.rsAccounting != null) {
+            rsAccounting.incGlobalMemStoreSize(dataSizeDelta, heapSizeDelta, offHeapSizeDelta);
+        }
+        long dataSize = this.memStoreSizing.incMemStoreSize(dataSizeDelta, heapSizeDelta,
+                offHeapSizeDelta, cellsCountDelta);
+        checkNegativeMemStoreDataSize(dataSize, dataSizeDelta);
+    }
+
+    void decrMemStoreSize(MemStoreSize mss) {
+        decrMemStoreSize(mss.getDataSize(), mss.getHeapSize(), mss.getOffHeapSize(),
+                mss.getCellsCount());
+    }
+
+    private void decrMemStoreSize(long dataSizeDelta, long heapSizeDelta, long offHeapSizeDelta,
+            int cellsCountDelta) {
+        if (this.rsAccounting != null) {
+            rsAccounting.decGlobalMemStoreSize(dataSizeDelta, heapSizeDelta, offHeapSizeDelta);
+        }
+        long dataSize = this.memStoreSizing.decMemStoreSize(dataSizeDelta, heapSizeDelta,
+                offHeapSizeDelta, cellsCountDelta);
+        checkNegativeMemStoreDataSize(dataSize, -dataSizeDelta);
+    }
+
+    private void checkNegativeMemStoreDataSize(long memStoreDataSize, long delta) {
+        // This is extremely bad if we make memStoreSizing negative. Log as much info on
+        // the offending
+        // caller as possible. (memStoreSizing might be a negative value already --
+        // freeing memory)
+        if (memStoreDataSize < 0) {
+            LOG.error("Asked to modify this region's (" + this.toString()
+                    + ") memStoreSizing to a negative value which is incorrect. Current memStoreSizing="
+                    + (memStoreDataSize - delta) + ", delta=" + delta, new Exception());
+        }
     }
 
     @Override
@@ -536,6 +606,10 @@ public class HRegion implements Region {
         Objects.requireNonNull(info, "RegionInfo cannot be null");
         HRegion r = HRegion.newHRegion(tableDir, wal, fs, conf, info, htd, rsServices);
         return r.openHRegion();
+    }
+
+    public NavigableMap<byte[], Integer> getReplicationScope() {
+        return this.replicationScope;
     }
 
     private HRegion openHRegion() throws IOException {
@@ -1340,6 +1414,99 @@ public class HRegion implements Region {
         LOG.debug("checkResources: ok");
     }
 
+    private WriteEntry doWALAppend(WALEdit walEdit, Durability durability, List<UUID> clusterIds,
+            long now, long nonceGroup, long nonce) throws IOException {
+        return doWALAppend(walEdit, durability, clusterIds, now, nonceGroup, nonce,
+                SequenceId.NO_SEQUENCE_ID);
+    }
+
+    /** Returns writeEntry associated with this append */
+    private WriteEntry doWALAppend(WALEdit walEdit, Durability durability, List<UUID> clusterIds,
+            long now, long nonceGroup, long nonce, long origLogSeqNum) throws IOException {
+        Preconditions.checkArgument(walEdit != null && !walEdit.isEmpty(), "WALEdit is null or empty!");
+        Preconditions.checkArgument(!walEdit.isReplay() || origLogSeqNum != SequenceId.NO_SEQUENCE_ID,
+                "Invalid replay sequence Id for replay WALEdit!");
+        // Using default cluster id, as this can only happen in the originating cluster.
+        // A slave cluster receives the final value (not the delta) as a Put. We use
+        // HLogKey
+        // here instead of WALKeyImpl directly to support legacy coprocessors.
+        WALKeyImpl walKey = walEdit.isReplay()
+                ? new WALKeyImpl(this.getRegionInfo().getEncodedNameAsBytes(),
+                        this.htableDescriptor.getTableName(), SequenceId.NO_SEQUENCE_ID, now, clusterIds,
+                        nonceGroup, nonce, mvcc)
+                : new WALKeyImpl(this.getRegionInfo().getEncodedNameAsBytes(),
+                        this.htableDescriptor.getTableName(), SequenceId.NO_SEQUENCE_ID, now, clusterIds,
+                        nonceGroup, nonce, mvcc, this.getReplicationScope());
+        if (walEdit.isReplay()) {
+            walKey.setOrigLogSeqNum(origLogSeqNum);
+        }
+        WriteEntry writeEntry = null;
+        try {
+            long txid = this.wal.appendData(this.getRegionInfo(), walKey, walEdit);
+            // Call sync on our edit.
+            if (txid != 0) {
+                sync(txid, durability);
+            }
+            writeEntry = walKey.getWriteEntry();
+        } catch (IOException ioe) {
+            if (walKey != null && walKey.getWriteEntry() != null) {
+                mvcc.complete(walKey.getWriteEntry());
+            }
+            throw ioe;
+        }
+        return writeEntry;
+    }
+
+    /**
+     * Calls sync with the given transaction ID
+     * 
+     * @param txid should sync up to which transaction
+     * @throws IOException If anything goes wrong with DFS
+     */
+    private void sync(long txid, Durability durability) throws IOException {
+        if (this.getRegionInfo().isMetaRegion()) {
+            this.wal.sync(txid);
+        } else {
+            switch (durability) {
+                case USE_DEFAULT:
+                    // do what table defaults to
+                    if (shouldSyncWAL()) {
+                        this.wal.sync(txid);
+                    }
+                    break;
+                case SKIP_WAL:
+                    // nothing do to
+                    break;
+                case ASYNC_WAL:
+                    // nothing do to
+                    break;
+                case SYNC_WAL:
+                    this.wal.sync(txid, false);
+                    break;
+                case FSYNC_WAL:
+                    this.wal.sync(txid, true);
+                    break;
+                default:
+                    throw new RuntimeException("Unknown durability " + durability);
+            }
+        }
+    }
+
+    /**
+     * Returns effective durability from the passed durability and the table
+     * descriptor.
+     */
+    private Durability getEffectiveDurability(Durability d) {
+        return d == Durability.USE_DEFAULT ? this.regionDurability : d;
+    }
+
+    /**
+     * Check whether we should sync the wal from the table's durability settings
+     */
+    private boolean shouldSyncWAL() {
+        return regionDurability.ordinal() > Durability.ASYNC_WAL.ordinal();
+    }
+
     private boolean matches(final CompareOperator op, final int compareResult) {
         boolean matches = false;
         switch (op) {
@@ -1532,25 +1699,23 @@ public class HRegion implements Region {
             List<Pair<NonceKey, WALEdit>> walEdits = batchOp.buildWALEdits(miniBatchOp);
 
             // STEP 4. Append the WALEdits to WAL and sync.
-            // for (Iterator<Pair<NonceKey, org.apache.hadoop.hbase.wal.WALEdit>> it =
-            // walEdits.iterator(); it.hasNext();) {
-            // Pair<NonceKey, org.apache.hadoop.hbase.wal.WALEdit> nonceKeyWALEditPair =
-            // it.next();
-            // walEdit = nonceKeyWALEditPair.getSecond();
-            // NonceKey nonceKey = nonceKeyWALEditPair.getFirst();
-            //
-            // if (walEdit != null && !walEdit.isEmpty()) {
-            // writeEntry = doWALAppend(walEdit, batchOp.durability,
-            // batchOp.getClusterIds(), now,
-            // nonceKey.getNonceGroup(), nonceKey.getNonce(), batchOp.getOrigLogSeqNum());
-            // }
-            //
-            // // Complete mvcc for all but last writeEntry (for replay case)
-            // if (it.hasNext() && writeEntry != null) {
-            // mvcc.complete(writeEntry);
-            // writeEntry = null;
-            // }
-            // }
+            for (Iterator<Pair<NonceKey, WALEdit>> it = walEdits.iterator(); it.hasNext();) {
+                Pair<NonceKey, WALEdit> nonceKeyWALEditPair = it.next();
+                walEdit = nonceKeyWALEditPair.getSecond();
+                NonceKey nonceKey = nonceKeyWALEditPair.getFirst();
+
+                if (walEdit != null && !walEdit.isEmpty()) {
+                    writeEntry = doWALAppend(walEdit, batchOp.durability,
+                            batchOp.getClusterIds(), now,
+                            nonceKey.getNonceGroup(), nonceKey.getNonce(), batchOp.getOrigLogSeqNum());
+                }
+                //
+                // Complete mvcc for all but last writeEntry (for replay case)
+                if (it.hasNext() && writeEntry != null) {
+                    mvcc.complete(writeEntry);
+                    writeEntry = null;
+                }
+            }
 
             // STEP 5. Write back to memStore
             // NOTE: writeEntry can be null here
@@ -1690,6 +1855,8 @@ public class HRegion implements Region {
 
         abstract public void checkAndPrepare() throws IOException;
 
+        public abstract long getOrigLogSeqNum();
+
         public BatchOperation(final HRegion region, T[] operations) {
             this.operations = operations;
             this.retCodeDetails = new OperationStatus[operations.length];
@@ -1744,34 +1911,56 @@ public class HRegion implements Region {
                 final MultiVersionConcurrencyControl.WriteEntry writeEntry)
                 throws IOException {
             if (writeEntry != null) {
-                // region.mvcc.completeAndWait(writeEntry);
+                region.mvcc.completeAndWait(writeEntry);
             }
         }
 
         protected void writeMiniBatchOperationsToMemStore(
                 final MiniBatchOperationInProgress<Mutation> miniBatchOp, final long writeNumber)
                 throws IOException {
-            // TODO
-            // org.apache.hadoop.hbase.regionserver.MemStoreSizing memStoreAccounting = new
-            // NonThreadSafeMemStoreSizing();
-            // visitBatchOperations(true, miniBatchOp.getLastIndexExclusive(), (int index)
-            // -> {
-            // // We need to update the sequence id for following reasons.
-            // // 1) If the op is in replay mode, FSWALEntry#stampRegionSequenceId won't
-            // stamp sequence id.
-            // // 2) If no WAL, FSWALEntry won't be used
-            // // we use durability of the original mutation for the mutation passed by CP.
-            // if (isInReplay() || getMutation(index).getDurability() ==
-            // Durability.SKIP_WAL) {
-            // region.updateSequenceId(familyCellMaps[index].values(), writeNumber);
+            MemStoreSizing memStoreAccounting = new NonThreadSafeMemStoreSizing();
+            visitBatchOperations(true, miniBatchOp.getLastIndexExclusive(), (int index) -> {
+                // We need to update the sequence id for following reasons.
+                // 1) If the op is in replay mode, FSWALEntry#stampRegionSequenceId won't
+                // stamp sequence id.
+                // 2) If no WAL, FSWALEntry won't be used
+                // we use durability of the original mutation for the mutation passed by CP.
+                // if (isInReplay() || getMutation(index).getDurability() ==
+                // Durability.SKIP_WAL) {
+                // region.updateSequenceId(familyCellMaps[index].values(), writeNumber);
+                // }
+                applyFamilyMapToMemStore(familyCellMaps[index], memStoreAccounting);
+                return true;
+            });
+            // update memStore size
+            region.incMemStoreSize(memStoreAccounting.getDataSize(),
+                    memStoreAccounting.getHeapSize(),
+                    memStoreAccounting.getOffHeapSize(), memStoreAccounting.getCellsCount());
+        }
+
+        public List<UUID> getClusterIds() {
+            assert size() != 0;
+            return getMutation(0).getClusterIds();
+        }
+
+        /**
+         * Atomically apply the given map of family->edits to the memstore. This handles
+         * the consistency
+         * control on its own, but the caller should already have locked
+         * updatesLock.readLock(). This
+         * also does <b>not</b> check the families for validity.
+         * 
+         * @param familyMap Map of Cells by family
+         */
+        protected void applyFamilyMapToMemStore(Map<byte[], List<Cell>> familyMap,
+                MemStoreSizing memstoreAccounting) throws IOException {
+            // for (Map.Entry<byte[], List<Cell>> e : familyMap.entrySet()) {
+            // byte[] family = e.getKey();
+            // List<Cell> cells = e.getValue();
+            // assert cells instanceof RandomAccess;
+            // region.applyToMemStore(region.getStore(family), cells, false,
+            // memstoreAccounting);
             // }
-            // applyFamilyMapToMemStore(familyCellMaps[index], memStoreAccounting);
-            // return true;
-            // });
-            // // update memStore size
-            // region.incMemStoreSize(memStoreAccounting.getDataSize(),
-            // memStoreAccounting.getHeapSize(),
-            // memStoreAccounting.getOffHeapSize(), memStoreAccounting.getCellsCount());
         }
 
         /**
@@ -1803,8 +1992,8 @@ public class HRegion implements Region {
             try {
                 this.checkAndPrepareMutation(mutation, timestamp);
                 if (mutation instanceof Put || mutation instanceof Delete) {
-                // store the family map reference to allow for mutations
-                familyCellMaps[index] = mutation.getFamilyCellMap();
+                    // store the family map reference to allow for mutations
+                    familyCellMaps[index] = mutation.getFamilyCellMap();
                 }
             } finally {
 
@@ -1981,10 +2170,10 @@ public class HRegion implements Region {
                         }
                     }
                     walEdit.add(familyCellMaps[index]);
-
                     return true;
                 }
             });
+            LOG.debug("buildWALEdits: {}", walEdits.toString());
             return walEdits;
         }
 
@@ -2107,6 +2296,11 @@ public class HRegion implements Region {
         @Override
         public boolean isInReplay() {
             return false;
+        }
+
+        @Override
+        public long getOrigLogSeqNum() {
+            return SequenceId.NO_SEQUENCE_ID;
         }
     }
 
