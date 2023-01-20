@@ -44,6 +44,7 @@ import org.waterme7on.hbase.executor.ExecutorService;
 import org.waterme7on.hbase.executor.ExecutorType;
 import org.waterme7on.hbase.fs.HFileSystem;
 import org.waterme7on.hbase.ipc.RpcClientFactory;
+import org.waterme7on.hbase.ipc.RpcServerInterface;
 import org.waterme7on.hbase.master.HMaster;
 import org.waterme7on.hbase.master.MasterRpcServices;
 import org.waterme7on.hbase.util.FSTableDescriptors;
@@ -1162,5 +1163,15 @@ public class HRegionServer extends Thread implements RegionServerServices {
         }
 
         return sb.toString();
+    }
+
+    @Override
+    public RpcServerInterface getRpcServer() {
+        return rpcServices.rpcServer;
+    }
+
+    @Override
+    public ExecutorService getExecutorService() {
+        return executorService;
     }
 }

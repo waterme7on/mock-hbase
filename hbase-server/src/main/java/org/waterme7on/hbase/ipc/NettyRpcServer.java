@@ -1,6 +1,7 @@
 package org.waterme7on.hbase.ipc;
 
 import org.waterme7on.hbase.Server;
+import org.waterme7on.hbase.io.ByteBuffAllocator;
 import org.apache.hadoop.conf.Configuration;
 import java.io.IOException;
 import java.net.BindException;

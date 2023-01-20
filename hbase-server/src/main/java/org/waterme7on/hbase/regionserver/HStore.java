@@ -2,6 +2,7 @@ package org.waterme7on.hbase.regionserver;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellComparator;
 import org.apache.hadoop.hbase.MemoryCompactionPolicy;
 import org.apache.hadoop.hbase.TableName;
@@ -14,13 +15,19 @@ import org.apache.hadoop.hbase.regionserver.HStoreFile;
 import org.apache.hadoop.hbase.regionserver.MemStore;
 import org.apache.hadoop.hbase.util.ReflectionUtils;
 import org.apache.hbase.thirdparty.com.google.common.collect.ImmutableCollection;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.waterme7on.hbase.regionserver.store.StoreEngine;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
 public class HStore implements Store {
+
+    final StoreEngine storeEngine;
+    private static final Logger LOG = LoggerFactory.getLogger(HStore.class);
+
     public static final String MEMSTORE_CLASS_NAME = "hbase.regionserver.memstore.class";
 
     private final Configuration conf;
@@ -37,6 +44,7 @@ public class HStore implements Store {
         this.memstore = getMemstore();
         // Assemble the store's home directory and Ensure it exists.
         region.getRegionFileSystem().createStoreDir(family.getNameAsString());
+        this.storeEngine = new StoreEngine(this.conf, this, region.getCellComparator());
 
     }
 
@@ -307,5 +315,62 @@ public class HStore implements Store {
 
     public long getBloomFilterEligibleRequestsCount() {
         return 0;
+    }
+
+    /**
+     * Adds or replaces the specified KeyValues.
+     * <p>
+     * For each KeyValue specified, if a cell with the same row, family, and
+     * qualifier exists in
+     * MemStore, it will be replaced. Otherwise, it will just be inserted to
+     * MemStore.
+     * <p>
+     * This operation is atomic on each KeyValue (row/family/qualifier) but not
+     * necessarily atomic
+     * across all of them.
+     * 
+     * @param readpoint readpoint below which we can safely remove duplicate KVs
+     */
+    public void upsert(Iterable<Cell> cells, long readpoint, MemStoreSizing memstoreSizing)
+            throws IOException {
+        LOG.debug("upsert: {}", cells.toString());
+        this.storeEngine.readLock();
+        try {
+            this.memstore.upsert(cells, readpoint, getOriginMemStoreSizing(memstoreSizing));
+        } finally {
+            this.storeEngine.readUnlock();
+        }
+    }
+
+    /**
+     * Adds the specified value to the memstore
+     */
+    public void add(final Iterable<Cell> cells, MemStoreSizing memstoreSizing) {
+        LOG.debug("add: {}", cells.toString());
+        storeEngine.readLock();
+        try {
+            // if (this.currentParallelPutCount.getAndIncrement() >
+            // this.parallelPutCountPrintThreshold) {
+            // LOG.trace("tableName={}, encodedName={}, columnFamilyName={} is too busy!",
+            // this.getTableName(), this.getRegionInfo().getEncodedName(),
+            // this.getColumnFamilyName());
+            // }
+            this.memstore.add(cells, getOriginMemStoreSizing(memstoreSizing));
+        } finally {
+            storeEngine.readUnlock();
+            // currentParallelPutCount.decrementAndGet();
+        }
+    }
+
+    public static org.apache.hadoop.hbase.regionserver.MemStoreSizing getOriginMemStoreSizing(
+            MemStoreSizing memstoreSizing) {
+        org.apache.hadoop.hbase.regionserver.MemStoreSizing memstoreSizing1;
+        memstoreSizing1 = org.apache.hadoop.hbase.regionserver.MemStoreSizing.DUD;
+        memstoreSizing1.incMemStoreSize(memstoreSizing.getDataSize() - memstoreSizing1.getDataSize(),
+                memstoreSizing.getHeapSize() - memstoreSizing1
+                        .getHeapSize(),
+                memstoreSizing.getOffHeapSize() - memstoreSizing1.getOffHeapSize(),
+                memstoreSizing.getCellsCount() - memstoreSizing1.getCellsCount());
+        return memstoreSizing1;
     }
 }
