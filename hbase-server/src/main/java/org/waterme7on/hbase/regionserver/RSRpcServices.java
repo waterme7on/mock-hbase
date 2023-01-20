@@ -450,24 +450,9 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
 
     private void put(HRegion region, OperationQuota quota, MutationProto mutation,
             CellScanner cellScanner, ActivePolicyEnforcement spaceQuota) throws IOException {
-        // long before = EnvironmentEdgeManager.currentTime();
         Put put = ProtobufUtil.toPut(mutation, cellScanner);
         checkCellSizeLimit(region, put);
-
-        if (spaceQuota != null) {
-            // spaceQuota.getPolicyEnforcement(region).check(put);
-        }
-        if (quota != null) {
-            // quota.addMutation(put);
-        }
         region.put(put);
-
-        // MetricsRegionServer metricsRegionServer = regionServer.getMetrics();
-        // if (metricsRegionServer != null) {
-        // long after = EnvironmentEdgeManager.currentTime();
-        // metricsRegionServer.updatePut(region.getRegionInfo().getTable(), after -
-        // before);
-        // }
     }
 
     @Override

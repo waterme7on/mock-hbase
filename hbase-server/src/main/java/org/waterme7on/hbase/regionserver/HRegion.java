@@ -228,6 +228,14 @@ public class HRegion implements Region {
         this.blockingMemStoreSize = this.memstoreFlushSize * mult;
     }
 
+    public static boolean rowIsInRange(RegionInfo info, final byte[] row, final int offset,
+            final short length) {
+        return ((info.getStartKey().length == 0)
+                || (Bytes.compareTo(info.getStartKey(), 0, info.getStartKey().length, row, offset, length) <= 0))
+                && ((info.getEndKey().length == 0)
+                        || (Bytes.compareTo(info.getEndKey(), 0, info.getEndKey().length, row, offset, length) > 0));
+    }
+
     /**
      * Returns Instance of {@link RegionServerServices} used by this HRegion. Can be
      * null.
@@ -1328,6 +1336,8 @@ public class HRegion implements Region {
             LOG.warn("Region is too busy due to exceeding memstore size limit.", rtbe);
             throw rtbe;
         }
+
+        LOG.debug("checkResources: ok");
     }
 
     private boolean matches(final CompareOperator op, final int compareResult) {
@@ -1552,8 +1562,6 @@ public class HRegion implements Region {
             batchOp.completeMiniBatchOperations(miniBatchOp, writeEntry);
             writeEntry = null;
             success = true;
-        } catch (Exception e) {
-
         } finally {
 
             // Call complete rather than completeAndWait because we probably had error if
@@ -1564,10 +1572,36 @@ public class HRegion implements Region {
                 this.updatesLock.readLock().unlock();
             }
             releaseRowLocks(acquiredRowLocks);
+
+            enableInterrupts();
+
+            final int finalLastIndexExclusive = miniBatchOp != null ? miniBatchOp.getLastIndexExclusive()
+                    : batchOp.size();
+            final boolean finalSuccess = success;
+            batchOp.visitBatchOperations(true, finalLastIndexExclusive, (int i) -> {
+                Mutation mutation = batchOp.getMutation(i);
+                if (mutation instanceof Increment || mutation instanceof Append) {
+                    if (finalSuccess) {
+                        batchOp.retCodeDetails[i] = new OperationStatus(OperationStatusCode.SUCCESS,
+                                batchOp.results[i]);
+                    } else {
+                        batchOp.retCodeDetails[i] = OperationStatus.FAILURE;
+                    }
+                } else {
+                    batchOp.retCodeDetails[i] = finalSuccess ? OperationStatus.SUCCESS : OperationStatus.FAILURE;
+                }
+                return true;
+            });
+
+            batchOp.doPostOpCleanupForMiniBatch(miniBatchOp, walEdit, finalSuccess);
+
+            batchOp.nextIndexToProcess = finalLastIndexExclusive;
+
         }
     }
 
     private void requestFlushIfNeeded() {
+        // TODO
     }
 
     /**
@@ -1641,7 +1675,8 @@ public class HRegion implements Region {
     private abstract static class BatchOperation<T> {
         public final T[] operations;
         protected final OperationStatus[] retCodeDetails;
-
+        // For Increment/Append operations
+        protected final Result[] results;
         public final HRegion region;
         // reference family cell maps directly so coprocessors can mutate them if
         // desired
@@ -1653,7 +1688,7 @@ public class HRegion implements Region {
         public boolean atomic = false;
         private int nextIndexToProcess;
 
-        abstract public void checkAndPrepare();
+        abstract public void checkAndPrepare() throws IOException;
 
         public BatchOperation(final HRegion region, T[] operations) {
             this.operations = operations;
@@ -1664,6 +1699,7 @@ public class HRegion implements Region {
             this.region = region;
             durability = Durability.USE_DEFAULT;
             this.nextIndexToProcess = 0;
+            this.results = new Result[operations.length];
         }
 
         public boolean isDone() {
@@ -1738,6 +1774,43 @@ public class HRegion implements Region {
             // memStoreAccounting.getOffHeapSize(), memStoreAccounting.getCellsCount());
         }
 
+        /**
+         * Helper method that checks and prepares only one mutation. This can be used to
+         * implement
+         * {@link #checkAndPrepare()} for entire Batch. NOTE: As CP
+         * prePut()/preDelete()/preIncrement()/preAppend() hooks may modify mutations,
+         * this method
+         * should be called after prePut()/preDelete()/preIncrement()/preAppend() CP
+         * hooks are run for
+         * the mutation
+         */
+        protected void checkAndPrepareMutation(Mutation mutation, final long timestamp)
+                throws IOException {
+            region.checkRow(mutation.getRow(), "batchMutate");
+            // if (mutation instanceof Put) {
+            // // Check the families in the put. If bad, skip this one.
+            // checkAndPreparePut((Put) mutation);
+            // region.checkTimestamps(mutation.getFamilyCellMap(), timestamp);
+            // } else if (mutation instanceof Delete) {
+            // region.prepareDelete((Delete) mutation);
+            // } else if (mutation instanceof Increment || mutation instanceof Append) {
+            // region.checkFamilies(mutation.getFamilyCellMap().keySet());
+            // }
+        }
+
+        protected void checkAndPrepareMutation(int index, long timestamp) throws IOException {
+            Mutation mutation = getMutation(index);
+            try {
+                this.checkAndPrepareMutation(mutation, timestamp);
+                if (mutation instanceof Put || mutation instanceof Delete) {
+                // store the family map reference to allow for mutations
+                familyCellMaps[index] = mutation.getFamilyCellMap();
+                }
+            } finally {
+
+            }
+        }
+
         public MiniBatchOperationInProgress<Mutation> lockRowsAndBuildMiniBatch(List<Region.RowLock> acquiredRowLocks)
                 throws IOException {
             int readyToWriteCount = 0;
@@ -1754,29 +1827,6 @@ public class HRegion implements Region {
                     continue;
                 }
 
-                // HBASE-19389 Limit concurrency of put with dense (hundreds) columns to avoid
-                // exhausting
-                // RS handlers, covering both MutationBatchOperation and ReplayBatchOperation
-                // The BAD_FAMILY/SANITY_CHECK_FAILURE cases are handled in checkAndPrepare
-                // phase and won't
-                // pass the isOperationPending check
-                // Map<byte[], List<Cell>> curFamilyCellMap =
-                // getMutation(lastIndexExclusive).getFamilyCellMap();
-                // try {
-                // // start the protector before acquiring row lock considering performance, and
-                // will finish
-                // // it when encountering exception
-                // region.storeHotnessProtector.start(curFamilyCellMap);
-                // } catch (RegionTooBusyException rtbe) {
-                // region.storeHotnessProtector.finish(curFamilyCellMap);
-                // if (isAtomic()) {
-                // throw rtbe;
-                // }
-                // retCodeDetails[lastIndexExclusive] =
-                // new OperationStatus(OperationStatusCode.STORE_TOO_BUSY, rtbe.getMessage());
-                // continue;
-                // }
-
                 Mutation mutation = getMutation(lastIndexExclusive);
                 // If we haven't got any rows in our batch, we should block to get the next one.
                 Region.RowLock rowLock = null;
@@ -1784,10 +1834,14 @@ public class HRegion implements Region {
                 try {
                     // if atomic then get exclusive lock, else shared lock
                     rowLock = region.getRowLock(mutation.getRow(), !isAtomic(), prevRowLock);
+                    LOG.debug("Successfully got lock, row={}, in region {}", Bytes.toStringBinary(mutation.getRow()),
+                            this);
                 } catch (TimeoutIOException | InterruptedIOException e) {
                     // NOTE: We will retry when other exceptions, but we should stop if we receive
                     // TimeoutIOException or InterruptedIOException as operation has timed out or
                     // interrupted respectively.
+                    LOG.debug("Timeout getting lock, row={}, in region {}", Bytes.toStringBinary(mutation.getRow()),
+                            this);
                     throwException = true;
                     throw e;
                 } catch (IOException ioe) {
@@ -1811,6 +1865,7 @@ public class HRegion implements Region {
                         // region.storeHotnessProtector.finish(curFamilyCellMap);
                         throw new IOException("Can't apply all operations atomically!");
                     }
+                    LOG.debug("We failed to grab another lock");
                     break; // Stop acquiring more rows for this batch
                 } else {
                     if (rowLock != prevRowLock) {
@@ -1874,6 +1929,12 @@ public class HRegion implements Region {
 
         public abstract boolean isInReplay();
 
+        public void doPostOpCleanupForMiniBatch(
+                final MiniBatchOperationInProgress<Mutation> miniBatchOp, final WALEdit walEdit,
+                boolean success) throws IOException {
+            // TODO
+        }
+
         /**
          * Builds separate WALEdit per nonce by applying input mutations. If WALEdits
          * from CP are
@@ -1888,7 +1949,7 @@ public class HRegion implements Region {
 
                 @Override
                 public boolean visit(int index) throws IOException {
-                    Mutation m = getMutation(index);
+                    // Mutation m = getMutation(index);
                     // // we use durability of the original mutation for the mutation passed by CP.
                     // if (region.getEffectiveDurability(m.getDurability()) == Durability.SKIP_WAL)
                     // {
@@ -1948,8 +2009,34 @@ public class HRegion implements Region {
         }
 
         @Override
-        public void checkAndPrepare() {
+        public void checkAndPrepare() throws IOException {
+            // index 0: puts, index 1: deletes, index 2: increments, index 3: append
+            final int[] metrics = { 0, 0, 0, 0 };
+            visitBatchOperations(true, this.size(), new Visitor() {
+                private long now = EnvironmentEdgeManager.currentTime();
+                private WALEdit walEdit;
 
+                @Override
+                public boolean visit(int index) throws IOException {
+                    // Run coprocessor pre hook outside of locks to avoid deadlock
+                    if (walEdit == null) {
+                        walEdit = new WALEdit();
+                    }
+                    // callPreMutateCPHook(index, walEdit, metrics);
+                    if (!walEdit.isEmpty()) {
+                        walEditsFromCoprocessors[index] = walEdit;
+                        walEdit = null;
+                    }
+                    if (isOperationPending(index)) {
+                        // updates are done with different timestamps after acquiring locks. This
+                        // behavior is
+                        // inherited from the code prior to this change. Can this be changed?
+                        checkAndPrepareMutation(index, now);
+                    }
+                    return true;
+                }
+
+            });
         }
 
         @Override
