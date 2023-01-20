@@ -23,7 +23,7 @@ public class SegmentScanner implements KeyValueScanner {
     private long readPoint;
     // the current iterator that can be reinitialized by
     // seek(), backwardSeek(), or reseek()
-    protected Iterator<org.apache.hadoop.hbase.Cell> iter;
+    protected Iterator<Cell> iter;
     // the pre-calculated cell to be returned by peek()
     protected Cell current = null;
     // or next()
@@ -42,7 +42,7 @@ public class SegmentScanner implements KeyValueScanner {
     /**
      * Scanners are ordered from 0 (oldest) to newest in increasing order.
      */
-    protected SegmentScanner(Segment segment, long readPoint) {
+    public SegmentScanner(Segment segment, long readPoint) {
         this.segment = segment;
         this.readPoint = readPoint;
         // increase the reference count so the underlying structure will not be

@@ -3,6 +3,8 @@ package org.waterme7on.hbase.regionserver;
 import java.io.IOException;
 import java.util.concurrent.ConcurrentMap;
 import org.waterme7on.hbase.Server;
+import org.waterme7on.hbase.executor.ExecutorService;
+import org.waterme7on.hbase.ipc.RpcServerInterface;
 import org.waterme7on.hbase.wal.WAL;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hbase.client.RegionInfo;
@@ -91,5 +93,9 @@ public interface RegionServerServices extends Server, OnlineRegions {
     }
 
     FileSystem getFileSystem();
+
+    RpcServerInterface getRpcServer();
+
+    ExecutorService getExecutorService();
 
 }

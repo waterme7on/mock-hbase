@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * @see NonThreadSafeMemStoreSizing
  * @see MemStoreSize
  */
-class ThreadSafeMemStoreSizing implements MemStoreSizing {
+public class ThreadSafeMemStoreSizing implements MemStoreSizing {
     // We used to tie the update of these thread counters so
     // they all changed together under one lock. This was
     // undone. Doesn't seem necessary.
@@ -20,7 +20,7 @@ class ThreadSafeMemStoreSizing implements MemStoreSizing {
     private final AtomicLong offHeapSize = new AtomicLong();
     private final AtomicInteger cellsCount = new AtomicInteger();
 
-    ThreadSafeMemStoreSizing() {
+    public ThreadSafeMemStoreSizing() {
         this(0, 0, 0, 0);
     }
 
@@ -28,7 +28,7 @@ class ThreadSafeMemStoreSizing implements MemStoreSizing {
         this(mss.getDataSize(), mss.getHeapSize(), mss.getOffHeapSize(), mss.getCellsCount());
     }
 
-    ThreadSafeMemStoreSizing(long dataSize, long heapSize, long offHeapSize, int cellsCount) {
+    public ThreadSafeMemStoreSizing(long dataSize, long heapSize, long offHeapSize, int cellsCount) {
         incMemStoreSize(dataSize, heapSize, offHeapSize, cellsCount);
     }
 

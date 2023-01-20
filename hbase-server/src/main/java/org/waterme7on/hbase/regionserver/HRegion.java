@@ -55,6 +55,8 @@ import org.waterme7on.hbase.ipc.RpcCall;
 import org.waterme7on.hbase.ipc.RpcServer;
 import org.waterme7on.hbase.monitoring.MonitoredTask;
 import org.waterme7on.hbase.monitoring.TaskMonitor;
+import org.waterme7on.hbase.regionserver.MemStoreSizing;
+import org.waterme7on.hbase.regionserver.Store;
 import org.waterme7on.hbase.util.ClassSize;
 import org.waterme7on.hbase.util.ServerRegionReplicaUtil;
 import org.waterme7on.hbase.wal.WAL;
@@ -124,6 +126,10 @@ public class HRegion implements Region {
 
     // Track data size in all memstores
     private final MemStoreSizing memStoreSizing = new ThreadSafeMemStoreSizing();
+
+    // private final MemStoreSizing memStoreSizing = new
+    // org.apache.hadoop.hbase.regionserver.
+
     // Number of requests blocked by memstore size.
     private final LongAdder blockedRequestsCount = new LongAdder();
     private long flushSize;
@@ -132,6 +138,7 @@ public class HRegion implements Region {
     private TableDescriptor htableDescriptor = null;
     // Stop updates lock
     private final ReentrantReadWriteLock updatesLock = new ReentrantReadWriteLock();
+    final ConcurrentHashMap<RegionScanner, Long> scannerReadPoints = new ConcurrentHashMap<>();
 
     // Context: During replay we want to ensure that we do not lose any data. So, we
     // have to be conservative in how we replay wals. For each store, we calculate
@@ -329,7 +336,7 @@ public class HRegion implements Region {
                 mss.getCellsCount());
     }
 
-    void incMemStoreSize(long dataSizeDelta, long heapSizeDelta, long offHeapSizeDelta,
+    public void incMemStoreSize(long dataSizeDelta, long heapSizeDelta, long offHeapSizeDelta,
             int cellsCountDelta) {
         if (this.rsAccounting != null) {
             rsAccounting.incGlobalMemStoreSize(dataSizeDelta, heapSizeDelta, offHeapSizeDelta);
@@ -372,8 +379,16 @@ public class HRegion implements Region {
     }
 
     @Override
-    public Store getStore(byte[] family) {
+    public HStore getStore(byte[] family) {
         return this.stores.get(family);
+    }
+
+    public WAL getWAL() {
+        return this.wal;
+    }
+
+    public long getMemStoreFlushSize() {
+        return this.memstoreFlushSize;
     }
 
     @Override
@@ -1122,7 +1137,7 @@ public class HRegion implements Region {
         // Initialize all the HStores
         status.setStatus("Initializing all the Stores");
         long maxSeqId = initializeStores(status);
-        // // this.mvcc.advanceTo(maxSeqId);
+        this.mvcc.advanceTo(maxSeqId);
 
         this.lastReplayedOpenRegionSeqId = maxSeqId;
 
@@ -1919,11 +1934,11 @@ public class HRegion implements Region {
                 throws IOException {
             MemStoreSizing memStoreAccounting = new NonThreadSafeMemStoreSizing();
             visitBatchOperations(true, miniBatchOp.getLastIndexExclusive(), (int index) -> {
-                // We need to update the sequence id for following reasons.
-                // 1) If the op is in replay mode, FSWALEntry#stampRegionSequenceId won't
-                // stamp sequence id.
-                // 2) If no WAL, FSWALEntry won't be used
-                // we use durability of the original mutation for the mutation passed by CP.
+                // // We need to update the sequence id for following reasons.
+                // // 1) If the op is in replay mode, FSWALEntry#stampRegionSequenceId won't
+                // // stamp sequence id.
+                // // 2) If no WAL, FSWALEntry won't be used
+                // // we use durability of the original mutation for the mutation passed by CP.
                 // if (isInReplay() || getMutation(index).getDurability() ==
                 // Durability.SKIP_WAL) {
                 // region.updateSequenceId(familyCellMaps[index].values(), writeNumber);
@@ -1954,12 +1969,12 @@ public class HRegion implements Region {
         protected void applyFamilyMapToMemStore(Map<byte[], List<Cell>> familyMap,
                 MemStoreSizing memstoreAccounting) throws IOException {
             for (Map.Entry<byte[], List<Cell>> e : familyMap.entrySet()) {
-                // byte[] family = e.getKey();
+                byte[] family = e.getKey();
                 List<Cell> cells = e.getValue();
                 assert cells instanceof RandomAccess;
                 LOG.debug(cells.toString());
-                // region.applyToMemStore(region.getStore(family), cells, false,
-                // memstoreAccounting);
+                region.applyToMemStore(region.getStore(family), cells, false,
+                        memstoreAccounting);
             }
         }
 
@@ -2458,6 +2473,39 @@ public class HRegion implements Region {
             }
             throw new InterruptedIOException();
         }
+    }
+
+    public void applyToMemStore(HStore store, List<Cell> cells, boolean delta, MemStoreSizing memstoreAccounting)
+            throws IOException {
+        // Any change in how we update Store/MemStore needs to also be done in other
+        // applyToMemStore!!!!
+        boolean upsert = delta && store.getColumnFamilyDescriptor().getMaxVersions() == 1;
+        if (upsert) {
+            store.upsert(cells, getSmallestReadPoint(), memstoreAccounting);
+        } else {
+            store.add(cells, memstoreAccounting);
+        }
+    }
+
+    /**
+     * @return The smallest mvcc readPoint across all the scanners in this region.
+     *         Writes older than
+     *         this readPoint, are included in every read operation.
+     */
+    public long getSmallestReadPoint() {
+        long minimumReadPoint;
+        // We need to ensure that while we are calculating the smallestReadPoint
+        // no new RegionScanners can grab a readPoint that we are unaware of.
+        // We achieve this by synchronizing on the scannerReadPoints object.
+        synchronized (scannerReadPoints) {
+            minimumReadPoint = mvcc.getReadPoint();
+            for (Long readPoint : this.scannerReadPoints.values()) {
+                if (readPoint < minimumReadPoint) {
+                    minimumReadPoint = readPoint;
+                }
+            }
+        }
+        return minimumReadPoint;
     }
 
     private void lock(final Lock lock) throws IOException {

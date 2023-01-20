@@ -6,8 +6,8 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
-import org.waterme7on.hbase.Cell;
-import org.waterme7on.hbase.PrivateCellUtil;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.PrivateCellUtil;
 import org.apache.hadoop.hbase.io.TimeRange;
 
 import org.apache.hbase.thirdparty.com.google.common.base.Preconditions;
