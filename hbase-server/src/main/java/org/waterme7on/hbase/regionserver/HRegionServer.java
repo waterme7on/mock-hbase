@@ -14,6 +14,7 @@ import org.apache.hadoop.hbase.zookeeper.*;
 import org.waterme7on.hbase.client.RegionServerRegistry;
 import org.apache.hadoop.hbase.exceptions.RegionMovedException;
 import org.apache.hadoop.hbase.exceptions.RegionOpeningException;
+import org.apache.hadoop.hbase.io.util.MemorySizeUtil;
 import org.waterme7on.hbase.TableDescriptors;
 import org.waterme7on.hbase.client.ClusterConnection;
 import org.apache.hadoop.hbase.ipc.RpcClient;
@@ -28,6 +29,7 @@ import org.apache.hadoop.hbase.trace.TraceUtil;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
+import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.RetryCounter;
 import org.apache.hadoop.hbase.util.RetryCounterFactory;
 import org.waterme7on.hbase.Server;
@@ -60,6 +62,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.management.MemoryType;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -386,6 +389,25 @@ public class HRegionServer extends Thread implements RegionServerServices {
     protected void initializeMemStoreChunkCreator() {
         // TODO: MemStoreLAB, simply leave empty now
         LOG.debug("initializeMemStoreChunkCreator");
+        // MSLAB is enabled. So initialize MemStoreChunkPool
+        // By this time, the MemstoreFlusher is already initialized. We can get the
+        // global limits from
+        // it.
+        Pair<Long, MemoryType> pair = MemorySizeUtil.getGlobalMemStoreSize(conf);
+        long globalMemStoreSize = pair.getFirst();
+        boolean offheap = this.regionServerAccounting.isOffheap();
+        // When off heap memstore in use, take full area for chunk pool.
+        float poolSizePercentage = offheap
+                ? 1.0F
+                : conf.getFloat(MemStoreLAB.CHUNK_POOL_MAXSIZE_KEY, MemStoreLAB.POOL_MAX_SIZE_DEFAULT);
+        float initialCountPercentage = conf.getFloat(MemStoreLAB.CHUNK_POOL_INITIALSIZE_KEY,
+                MemStoreLAB.POOL_INITIAL_SIZE_DEFAULT);
+        int chunkSize = conf.getInt(MemStoreLAB.CHUNK_SIZE_KEY, MemStoreLAB.CHUNK_SIZE_DEFAULT);
+        float indexChunkSizePercent = conf.getFloat(MemStoreLAB.INDEX_CHUNK_SIZE_PERCENTAGE_KEY,
+                MemStoreLAB.INDEX_CHUNK_SIZE_PERCENTAGE_DEFAULT);
+        // init the chunkCreator
+        ChunkCreator.initialize(chunkSize, offheap, globalMemStoreSize, poolSizePercentage,
+                initialCountPercentage, this.hMemManager, indexChunkSizePercent);
     }
 
     @Override
