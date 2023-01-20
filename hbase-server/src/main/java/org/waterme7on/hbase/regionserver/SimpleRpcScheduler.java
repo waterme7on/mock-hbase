@@ -75,7 +75,6 @@ public class SimpleRpcScheduler extends RpcScheduler implements ConfigurationObs
 
     @Override
     public boolean dispatch(CallRunner callTask) throws InterruptedException {
-        LOG.debug("dispatch " + callTask.toString());
         return callExecutor.dispatch(callTask);
     }
 }

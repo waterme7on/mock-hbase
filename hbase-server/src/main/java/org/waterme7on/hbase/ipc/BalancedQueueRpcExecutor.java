@@ -34,7 +34,6 @@ public class BalancedQueueRpcExecutor extends RpcExecutor {
 
     @Override
     public boolean dispatch(final CallRunner callTask) {
-        SimpleRpcScheduler.LOG.debug("BQExecutor - dispatch " + callTask.toString());
         int queueIndex = balancer.getNextQueue(callTask);
         BlockingQueue<CallRunner> queue = queues.get(queueIndex);
         // that means we can overflow by at most <num reader> size (5), that's ok

@@ -51,13 +51,11 @@ public class HeapByteBufAllocator extends AbstractByteBufAllocator {
 
     @Override
     protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
-        LOG.debug("newHeapBuffer({}, {})", initialCapacity, maxCapacity);
         return delegate.heapBuffer(initialCapacity, maxCapacity);
     }
 
     @Override
     protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
-        LOG.debug("newDirectBuffer({}, {})", initialCapacity, maxCapacity);
         return delegate.directBuffer(initialCapacity, maxCapacity);
     }
 
