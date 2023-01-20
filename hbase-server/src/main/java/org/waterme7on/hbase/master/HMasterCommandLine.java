@@ -125,6 +125,7 @@ public class HMasterCommandLine extends ServerCommandLine {
             Admin admin = connection.getAdmin();
             TableDescriptor td = TableDescriptorBuilder.newBuilder(TableName.valueOf(tableName))
                     .setColumnFamily(ColumnFamilyDescriptorBuilder.of("cf"))
+                    .setDurability(Durability.ASYNC_WAL)
                     .build();
             admin.createTable(td);
             return 1;
@@ -190,6 +191,7 @@ public class HMasterCommandLine extends ServerCommandLine {
 
         Put put = new Put(Bytes.toBytes(rowKey));
         put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes(qualifer), 0, Bytes.toBytes(value));
+        put.setDurability(Durability.ASYNC_WAL);
         Table t = connection.getTable(TableName.valueOf(tableName));
         t.put(put);
     }
@@ -314,6 +316,8 @@ public class HMasterCommandLine extends ServerCommandLine {
                     break;
                 case "put":
                     this.put(myConnection, Arrays.asList("put", "test", "row1", "q1", "value1"));
+                    break;
+                case "":
                     break;
                 default:
                     System.out.println("[" + inputCommand + "] is not a valid command. Please try again.");

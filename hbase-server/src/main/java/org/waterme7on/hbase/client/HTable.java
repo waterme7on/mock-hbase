@@ -104,10 +104,6 @@ public class HTable implements Table {
                         .getTableMapService();
                 TableLocationResponse tableMapResponse = rs.tableLocation(rpcControllerFactory.newController(),
                         tableMapRequest);
-                LOG.debug(tableMapResponse.getRegionName());
-                LOG.debug(tableMapResponse.getServerName());
-
-                
                 ClientProtos.MutateRequest request = RequestConverter
                         .buildMutateRequest(Bytes.toBytes(tableMapResponse.getRegionName()), put);
                 ClientProtos.ClientService.BlockingInterface stub = (ClientProtos.ClientService.BlockingInterface) this.connection

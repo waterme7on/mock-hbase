@@ -1,5 +1,8 @@
 package org.waterme7on.hbase.wal;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * A 'truck' to carry a payload across the ring buffer from Handler to WAL. Has
  * EITHER a
@@ -10,6 +13,8 @@ package org.waterme7on.hbase.wal;
  * payload references must be discarded on consumption to release them to GC.
  */
 final class RingBufferTruck {
+
+    private static final Logger LOG = LoggerFactory.getLogger(RingBufferTruck.class);
 
     public enum Type {
         APPEND,
@@ -29,6 +34,7 @@ final class RingBufferTruck {
      * Load the truck with a {@link FSWALEntry}.
      */
     void load(FSWALEntry entry) {
+        LOG.debug("loadEntry: {}", entry.toString());
         this.entry = entry;
         this.type = Type.APPEND;
     }
@@ -37,6 +43,7 @@ final class RingBufferTruck {
      * Load the truck with a {@link SyncFuture}.
      */
     void load(final SyncFuture syncFuture) {
+        LOG.debug("loadSync: {}", syncFuture.toString());
         this.sync = syncFuture;
         this.type = Type.SYNC;
     }
@@ -52,6 +59,7 @@ final class RingBufferTruck {
      */
     FSWALEntry unloadAppend() {
         FSWALEntry entry = this.entry;
+        LOG.debug("unloadAppend: {}", entry.toString());
         this.entry = null;
         this.type = Type.EMPTY;
         return entry;
@@ -65,6 +73,7 @@ final class RingBufferTruck {
         SyncFuture sync = this.sync;
         this.sync = null;
         this.type = Type.EMPTY;
+        LOG.debug("unloadSync: {}", sync.toString());
         return sync;
     }
 }
