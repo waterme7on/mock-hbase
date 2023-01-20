@@ -3,6 +3,7 @@ package org.waterme7on.hbase.ipc;
 import org.waterme7on.hbase.regionserver.RSRpcServices;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.CellScanner;
+import org.apache.hadoop.hbase.io.ByteBuffAllocator;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -31,4 +32,5 @@ public interface RpcServerInterface {
 
     Pair<Message, CellScanner> call(RpcCall call) throws IOException;
 
+    ByteBuffAllocator getByteBuffAllocator();
 }

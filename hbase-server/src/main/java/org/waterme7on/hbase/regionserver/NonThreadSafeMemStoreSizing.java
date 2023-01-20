@@ -9,13 +9,13 @@ package org.waterme7on.hbase.regionserver;
  * 
  * @see ThreadSafeMemStoreSizing
  */
-class NonThreadSafeMemStoreSizing implements MemStoreSizing {
+public class NonThreadSafeMemStoreSizing implements MemStoreSizing {
     private long dataSize = 0;
     private long heapSize = 0;
     private long offHeapSize = 0;
     private int cellsCount = 0;
 
-    NonThreadSafeMemStoreSizing() {
+    public NonThreadSafeMemStoreSizing() {
         this(0, 0, 0, 0);
     }
 

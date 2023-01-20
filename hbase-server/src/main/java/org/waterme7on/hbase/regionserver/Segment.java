@@ -7,14 +7,12 @@ import java.util.Objects;
 import java.util.SortedSet;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import org.waterme7on.hbase.Cell;
-import org.waterme7on.hbase.CellComparator;
-import org.waterme7on.hbase.KeyValue;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.CellComparator;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.waterme7on.hbase.util.ClassSize;
 import org.apache.hadoop.hbase.regionserver.CellSet;
-import org.waterme7on.hbase.regionserver.ImmutableSegment;
-import org.waterme7on.hbase.regionserver.KeyValueScanner;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.slf4j.Logger;
 
@@ -54,7 +52,7 @@ public abstract class Segment implements MemStoreSizing {
 
     // Empty constructor to be used when Segment is used as interface,
     // and there is no need in true Segments state
-    protected Segment(CellComparator comparator, TimeRangeTracker trt) {
+    public Segment(CellComparator comparator, TimeRangeTracker trt) {
         this.comparator = comparator;
         // Do we need to be thread safe always? What if ImmutableSegment?
         // DITTO for the TimeRangeTracker below.
@@ -62,7 +60,28 @@ public abstract class Segment implements MemStoreSizing {
         this.timeRangeTracker = trt;
     }
 
-    protected Segment(CellComparator comparator, List<ImmutableSegment> segments,
+    // public Segment(CellComparator comparator, List<ImmutableSegment> segments,
+    //         TimeRangeTracker trt) {
+    //     long dataSize = 0;
+    //     long heapSize = 0;
+    //     long OffHeapSize = 0;
+    //     int cellsCount = 0;
+    //     for (Segment segment : segments) {
+    //         MemStoreSize memStoreSize = segment.getMemStoreSize();
+    //         dataSize += memStoreSize.getDataSize();
+    //         heapSize += memStoreSize.getHeapSize();
+    //         OffHeapSize += memStoreSize.getOffHeapSize();
+    //         cellsCount += memStoreSize.getCellsCount();
+    //     }
+    //     this.comparator = comparator;
+    //     this.updatesLock = new ReentrantReadWriteLock();
+    //     // Do we need to be thread safe always? What if ImmutableSegment?
+    //     // DITTO for the TimeRangeTracker below.
+    //     this.memStoreSizing = new ThreadSafeMemStoreSizing(dataSize, heapSize, OffHeapSize, cellsCount);
+    //     this.timeRangeTracker = trt;
+    // }
+
+    public Segment(CellComparator comparator, List<org.waterme7on.hbase.regionserver.store.ImmutableSegment> segments,
             TimeRangeTracker trt) {
         long dataSize = 0;
         long heapSize = 0;
@@ -84,7 +103,7 @@ public abstract class Segment implements MemStoreSizing {
     }
 
     // This constructor is used to create empty Segments.
-    protected Segment(CellSet cellSet, CellComparator comparator, MemStoreLAB memStoreLAB,
+    public Segment(CellSet cellSet, CellComparator comparator, MemStoreLAB memStoreLAB,
             TimeRangeTracker trt) {
         this.cellSet.set(cellSet);
         this.comparator = comparator;
@@ -114,7 +133,7 @@ public abstract class Segment implements MemStoreSizing {
      * 
      * @return a scanner for the given read point
      */
-    protected KeyValueScanner getScanner(long readPoint) {
+    public KeyValueScanner getScanner(long readPoint) {
         return (KeyValueScanner) new SegmentScanner(this, readPoint);
     }
 
@@ -169,11 +188,7 @@ public abstract class Segment implements MemStoreSizing {
     /**
      * Get cell length after serialized in {@link KeyValue}
      */
-    static int getCellLength(Cell cell) {
-        return cell.getSerializedSize();
-    }
-
-    static int getCellLength(org.apache.hadoop.hbase.Cell cell) {
+    protected static int getCellLength(Cell cell) {
         return cell.getSerializedSize();
     }
 
@@ -290,7 +305,7 @@ public abstract class Segment implements MemStoreSizing {
     }
 
     /** Returns a set of all cells in the segment */
-    protected CellSet getCellSet() {
+    public CellSet getCellSet() {
         return cellSet.get();
     }
 
@@ -410,7 +425,7 @@ public abstract class Segment implements MemStoreSizing {
         return getCellSet().tailSet((org.apache.hadoop.hbase.Cell) firstCell);
     }
 
-    MemStoreLAB getMemStoreLAB() {
+    public MemStoreLAB getMemStoreLAB() {
         return memStoreLAB;
     }
 
@@ -418,7 +433,7 @@ public abstract class Segment implements MemStoreSizing {
     /**
      * Dumps all cells of the segment into the given log
      */
-    void dump(Logger log) {
+    public void dump(Logger log) {
         for (org.apache.hadoop.hbase.Cell cell : getCellSet()) {
             log.debug(Objects.toString(cell));
         }

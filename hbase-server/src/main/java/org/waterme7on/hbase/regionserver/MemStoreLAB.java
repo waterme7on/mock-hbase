@@ -61,7 +61,7 @@ public interface MemStoreLAB {
      * over the copied the data. When this MemStoreLAB can not copy this Cell, it
      * returns null.
      */
-    org.waterme7on.hbase.Cell copyCellInto(Cell cell);
+    Cell copyCellInto(Cell cell);
 
     /**
      * Allocates slice in this LAB and copy the passed Cell into this area. Returns
@@ -76,7 +76,7 @@ public interface MemStoreLAB {
      * forcing the allocation
      * of big cells on this MSLAB.
      */
-    org.waterme7on.hbase.Cell forceCopyOfBigCellInto(Cell cell);
+    Cell forceCopyOfBigCellInto(Cell cell);
 
     /**
      * Close instance since it won't be used any more, try to put the chunks back to

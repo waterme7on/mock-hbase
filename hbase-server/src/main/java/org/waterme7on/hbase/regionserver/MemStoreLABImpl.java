@@ -105,7 +105,7 @@ public class MemStoreLABImpl implements MemStoreLAB {
     }
 
     @Override
-    public org.waterme7on.hbase.Cell copyCellInto(Cell cell) {
+    public Cell copyCellInto(Cell cell) {
         // See head of copyBBECellInto for how it differs from copyCellInto
         return (cell instanceof ByteBufferExtendedCell)
                 ? copyBBECellInto((ByteBufferExtendedCell) cell, maxAlloc)
@@ -121,7 +121,7 @@ public class MemStoreLABImpl implements MemStoreLAB {
      * method.
      */
     @Override
-    public org.waterme7on.hbase.Cell forceCopyOfBigCellInto(Cell cell) {
+    public Cell forceCopyOfBigCellInto(Cell cell) {
         int size = Segment.getCellLength(cell);
         Preconditions.checkArgument(size >= 0, "negative size");
         if (size + ChunkCreator.SIZEOF_CHUNK_HEADER <= dataChunkSize) {
@@ -145,7 +145,7 @@ public class MemStoreLABImpl implements MemStoreLAB {
      * 
      * @see #copyCellInto(Cell, int)
      */
-    private org.waterme7on.hbase.Cell copyBBECellInto(ByteBufferExtendedCell cell, int maxAlloc) {
+    private Cell copyBBECellInto(ByteBufferExtendedCell cell, int maxAlloc) {
         int size = cell.getSerializedSize();
         Preconditions.checkArgument(size >= 0, "negative size");
         // Callers should satisfy large allocations from JVM heap so limit
@@ -181,7 +181,7 @@ public class MemStoreLABImpl implements MemStoreLAB {
     /**
      * @see #copyBBECellInto(ByteBufferExtendedCell, int)
      */
-    private org.waterme7on.hbase.Cell copyCellInto(Cell cell, int maxAlloc) {
+    private Cell copyCellInto(Cell cell, int maxAlloc) {
         int size = Segment.getCellLength(cell);
         Preconditions.checkArgument(size >= 0, "negative size");
         // Callers should satisfy large allocations directly from JVM since they
@@ -221,7 +221,7 @@ public class MemStoreLABImpl implements MemStoreLAB {
      * 
      * @see #copyBBECToChunkCell(ByteBufferExtendedCell, ByteBuffer, int, int)
      */
-    private static org.waterme7on.hbase.Cell copyToChunkCell(Cell cell, ByteBuffer buf, int offset, int len) {
+    private static Cell copyToChunkCell(Cell cell, ByteBuffer buf, int offset, int len) {
         int tagsLen = cell.getTagsLength();
         if (cell instanceof ExtendedCell) {
             ((ExtendedCell) cell).write(buf, offset);
@@ -243,7 +243,7 @@ public class MemStoreLABImpl implements MemStoreLAB {
      * 
      * @see #copyToChunkCell(Cell, ByteBuffer, int, int)
      */
-    private static org.waterme7on.hbase.Cell copyBBECToChunkCell(ByteBufferExtendedCell cell, ByteBuffer buf,
+    private static Cell copyBBECToChunkCell(ByteBufferExtendedCell cell, ByteBuffer buf,
             int offset,
             int len) {
         int tagsLen = cell.getTagsLength();
@@ -251,7 +251,7 @@ public class MemStoreLABImpl implements MemStoreLAB {
         return createChunkCell(buf, offset, len, tagsLen, cell.getSequenceId());
     }
 
-    private static org.waterme7on.hbase.Cell createChunkCell(ByteBuffer buf, int offset, int len, int tagsLen,
+    private static Cell createChunkCell(ByteBuffer buf, int offset, int len, int tagsLen,
             long sequenceId) {
         // TODO : write the seqid here. For writing seqId we should create a new cell
         // type so
@@ -264,9 +264,9 @@ public class MemStoreLABImpl implements MemStoreLAB {
             // reading the tagLength stored in the backing buffer. The Memstore addition of
             // every Cell
             // call getTagsLength().
-            return (org.waterme7on.hbase.Cell) new NoTagByteBufferChunkKeyValue(buf, offset, len, sequenceId);
+            return (Cell) new NoTagByteBufferChunkKeyValue(buf, offset, len, sequenceId);
         } else {
-            return (org.waterme7on.hbase.Cell) new ByteBufferChunkKeyValue(buf, offset, len, sequenceId);
+            return (Cell) new ByteBufferChunkKeyValue(buf, offset, len, sequenceId);
         }
     }
 

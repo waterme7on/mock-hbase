@@ -236,6 +236,10 @@ public abstract class RpcServer implements RpcServerInterface, ConfigurationObse
     protected void initReconfigurable(Configuration confToLoad) {
     }
 
+    @Override
+    public ByteBuffAllocator getByteBuffAllocator() {
+        return this.bbAllocator;
+    }
     /**
      * This is a server side method, which is invoked over RPC. On success the
      * return response has
