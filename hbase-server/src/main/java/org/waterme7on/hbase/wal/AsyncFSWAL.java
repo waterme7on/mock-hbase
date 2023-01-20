@@ -35,10 +35,7 @@ import org.apache.hadoop.hbase.HBaseInterfaceAudience;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.io.asyncfs.AsyncFSOutput;
 import org.apache.hadoop.hbase.io.asyncfs.monitor.StreamSlowMonitor;
-import org.apache.hadoop.hbase.regionserver.wal.AsyncProtobufLogWriter;
 import org.apache.hadoop.hbase.regionserver.wal.WALActionsListener;
-import org.waterme7on.hbase.wal.AsyncFSWALProvider;
-import org.waterme7on.hbase.wal.WALEdit;
 import org.apache.hadoop.hbase.wal.WALKeyImpl;
 import org.waterme7on.hbase.wal.WALProvider.AsyncWriter;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
@@ -619,12 +616,15 @@ public class AsyncFSWAL extends AbstractFSWAL<AsyncWriter> {
         } finally {
             consumeLock.unlock();
         }
+        LOG.debug("start consuming ... {}->{}", waitingConsumePayloadsGatingSequence.get() + 1,
+                waitingConsumePayloads.getCursor());
         long nextCursor = waitingConsumePayloadsGatingSequence.get() + 1;
         for (long cursorBound = waitingConsumePayloads.getCursor(); nextCursor <= cursorBound; nextCursor++) {
             if (!waitingConsumePayloads.isPublished(nextCursor)) {
                 break;
             }
             RingBufferTruck truck = waitingConsumePayloads.get(nextCursor);
+            LOG.debug("consuming({} - {})", nextCursor, truck.toString());
             switch (truck.type()) {
                 case APPEND:
                     toWriteAppends.addLast(truck.unloadAppend());
@@ -637,6 +637,7 @@ public class AsyncFSWAL extends AbstractFSWAL<AsyncWriter> {
                     break;
             }
             waitingConsumePayloadsGatingSequence.set(nextCursor);
+            LOG.debug("consume done ({} - {})", nextCursor, truck.toString());
         }
         appendAndSync();
         if (hasConsumerTask.get()) {
@@ -687,6 +688,7 @@ public class AsyncFSWAL extends AbstractFSWAL<AsyncWriter> {
     protected long append(RegionInfo hri, WALKeyImpl key, WALEdit edits, boolean inMemstore)
             throws IOException {
         long txid = stampSequenceIdAndPublishToRingBuffer(hri, key, edits, inMemstore, waitingConsumePayloads);
+        LOG.debug("append({}) - {}, {}", txid, hri.toString(), edits.toString());
         if (shouldScheduleConsumer()) {
             consumeExecutor.execute(consumer);
         }
@@ -721,6 +723,7 @@ public class AsyncFSWAL extends AbstractFSWAL<AsyncWriter> {
         try {
             future = getSyncFuture(txid, forceSync);
             RingBufferTruck truck = waitingConsumePayloads.get(sequence);
+            LOG.debug("doSync({}) - {}, {}", sequence, truck.toString(), future.toString());
             truck.load(future);
         } finally {
             waitingConsumePayloads.publish(sequence);
@@ -733,7 +736,7 @@ public class AsyncFSWAL extends AbstractFSWAL<AsyncWriter> {
 
     @Override
     protected AsyncWriter createWriterInstance(Path path) throws IOException {
-        return (AsyncWriter) AsyncFSWALProvider.createAsyncWriter(conf, fs, path, false, this.blocksize,
+        return AsyncFSWALProvider.createAsyncWriter(conf, fs, path, false, this.blocksize,
                 eventLoopGroup, channelClass, streamSlowMonitor);
     }
 
@@ -868,5 +871,4 @@ public class AsyncFSWAL extends AbstractFSWAL<AsyncWriter> {
         AsyncFSOutput output = this.fsOut;
         return output != null && output.isBroken();
     }
-
 }

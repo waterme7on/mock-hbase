@@ -1411,7 +1411,6 @@ public class HRegion implements Region {
             throw rtbe;
         }
 
-        LOG.debug("checkResources: ok");
     }
 
     private WriteEntry doWALAppend(WALEdit walEdit, Durability durability, List<UUID> clusterIds,
@@ -1442,6 +1441,7 @@ public class HRegion implements Region {
         }
         WriteEntry writeEntry = null;
         try {
+            LOG.debug("doWALAppend: {} {} {}", this.getRegionInfo().toString(), walKey.toString(), walEdit.toString());
             long txid = this.wal.appendData(this.getRegionInfo(), walKey, walEdit);
             // Call sync on our edit.
             if (txid != 0) {
@@ -1610,7 +1610,6 @@ public class HRegion implements Region {
         // So nonces are not really ever used by HBase. They could be by coprocs, and
         // checkAnd...
 
-        LOG.debug("batchMutate");
         return batchMutate(new MutationBatchOperation(this, mutations, atomic, nonceGroup, nonce));
     }
 
@@ -1642,7 +1641,6 @@ public class HRegion implements Region {
      */
     private void doMiniBatchMutate(BatchOperation<?> batchOp) throws IOException {
         /////////////////////
-        LOG.debug("doMiniBatchMutation");
         boolean success = false;
         WALEdit walEdit = null;
         MultiVersionConcurrencyControl.WriteEntry writeEntry = null;
@@ -1704,6 +1702,7 @@ public class HRegion implements Region {
                 walEdit = nonceKeyWALEditPair.getSecond();
                 NonceKey nonceKey = nonceKeyWALEditPair.getFirst();
 
+                LOG.debug("Step4: {}", walEdit.toString());
                 if (walEdit != null && !walEdit.isEmpty()) {
                     writeEntry = doWALAppend(walEdit, batchOp.durability,
                             batchOp.getClusterIds(), now,
@@ -1954,13 +1953,14 @@ public class HRegion implements Region {
          */
         protected void applyFamilyMapToMemStore(Map<byte[], List<Cell>> familyMap,
                 MemStoreSizing memstoreAccounting) throws IOException {
-            // for (Map.Entry<byte[], List<Cell>> e : familyMap.entrySet()) {
-            // byte[] family = e.getKey();
-            // List<Cell> cells = e.getValue();
-            // assert cells instanceof RandomAccess;
-            // region.applyToMemStore(region.getStore(family), cells, false,
-            // memstoreAccounting);
-            // }
+            for (Map.Entry<byte[], List<Cell>> e : familyMap.entrySet()) {
+                // byte[] family = e.getKey();
+                List<Cell> cells = e.getValue();
+                assert cells instanceof RandomAccess;
+                LOG.debug(cells.toString());
+                // region.applyToMemStore(region.getStore(family), cells, false,
+                // memstoreAccounting);
+            }
         }
 
         /**
@@ -2242,7 +2242,12 @@ public class HRegion implements Region {
         public MultiVersionConcurrencyControl.WriteEntry writeMiniBatchOperationsToMemStore(
                 MiniBatchOperationInProgress<Mutation> miniBatchOp,
                 MultiVersionConcurrencyControl.WriteEntry writeEntry) throws IOException {
-            return null;
+            LOG.debug("writeMiniBatchOperationsToMemStore");
+            if (writeEntry == null) {
+                writeEntry = region.mvcc.begin();
+            }
+            super.writeMiniBatchOperationsToMemStore(miniBatchOp, writeEntry.getWriteNumber());
+            return writeEntry;
         }
 
         private static Get toGet(final Mutation mutation) throws IOException {

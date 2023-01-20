@@ -111,7 +111,6 @@ public abstract class ServerRpcConnection implements Closeable {
     }
 
     public void processOneRpc(ByteBuff buf) throws IOException, InterruptedException {
-        RpcServer.LOG.debug("ServerRpcConnection.processOneRpc");
         if (connectionHeaderRead) {
             processRequest(buf);
         } else {
