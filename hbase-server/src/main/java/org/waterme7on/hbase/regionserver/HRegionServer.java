@@ -1196,4 +1196,9 @@ public class HRegionServer extends Thread implements RegionServerServices {
     public ExecutorService getExecutorService() {
         return executorService;
     }
+
+    @Override
+    public Object getNonceManager() {
+        return null;
+    }
 }

@@ -7,32 +7,48 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellComparator;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.MemoryCompactionPolicy;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.ColumnFamilyDescriptor;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.regionserver.HStoreFile;
+import org.apache.hadoop.hbase.regionserver.ScanInfo;
+import org.apache.hadoop.hbase.regionserver.StoreConfigInformation;
+import org.apache.hadoop.hbase.regionserver.StoreFileManager;
+import org.apache.hadoop.hbase.regionserver.StoreFileScanner;
+import org.apache.hadoop.hbase.regionserver.querymatcher.ScanQueryMatcher;
 import org.apache.hadoop.hbase.util.ReflectionUtils;
 import org.apache.hbase.thirdparty.com.google.common.collect.ImmutableCollection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
+import java.util.NavigableSet;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
-public class HStore implements Store {
+public class HStore implements Store, StoreConfigInformation {
 
     final StoreEngine storeEngine;
     private static final Logger LOG = LoggerFactory.getLogger(HStore.class);
 
+    public static final String BLOCKING_STOREFILES_KEY = "hbase.hstore.blockingStoreFiles";
+    public static final int DEFAULT_BLOCKING_STOREFILE_COUNT = 16;
+    public static final String COMPACTCHECKER_INTERVAL_MULTIPLIER_KEY = "hbase.server.compactchecker.interval.multiplier";
+    public static final int DEFAULT_COMPACTCHECKER_INTERVAL_MULTIPLIER = 1000;
     public static final String MEMSTORE_CLASS_NAME = "hbase.regionserver.memstore.class";
-
+    private ScanInfo scanInfo;
     private final Configuration conf;
     private final HRegion region;
     private final StoreContext storeContext;
     private final MemStore memstore;
+    private long blockingFileCount;
+    private int compactionCheckMultiplier;
 
     protected HStore(final HRegion region, final ColumnFamilyDescriptor family,
             final Configuration confParam, boolean warmup) throws IOException {
@@ -44,7 +60,14 @@ public class HStore implements Store {
         // Assemble the store's home directory and Ensure it exists.
         region.getRegionFileSystem().createStoreDir(family.getNameAsString());
         this.storeEngine = new StoreEngine(this.conf, this, region.getCellComparator());
+        this.blockingFileCount = conf.getInt(BLOCKING_STOREFILES_KEY, DEFAULT_BLOCKING_STOREFILE_COUNT);
+        this.compactionCheckMultiplier = conf.getInt(COMPACTCHECKER_INTERVAL_MULTIPLIER_KEY,
+                DEFAULT_COMPACTCHECKER_INTERVAL_MULTIPLIER);
 
+        long timeToPurgeDeletes = Math.max(conf.getLong("hbase.hstore.time.to.purge.deletes", 0), 0);
+        // Get TTL
+        long ttl = determineTTLFromFamily(family);
+        this.scanInfo = new ScanInfo(conf, family, ttl, timeToPurgeDeletes, region.getCellComparator());
     }
 
     private MemStore getMemstore() {
@@ -301,6 +324,55 @@ public class HStore implements Store {
         return 0;
     }
 
+    public HRegion getHRegion() {
+        return this.region;
+    }
+
+    public StoreContext getStoreContext() {
+        return storeContext;
+    }
+
+    /**
+     * Return a scanner for both the memstore and the HStore files. Assumes we are
+     * not in a
+     * compaction.
+     * 
+     * @param scan       Scan to apply when scanning the stores
+     * @param targetCols columns to scan
+     * @return a scanner over the current key values
+     * @throws IOException on failure
+     */
+    public KeyValueScanner getScanner(Scan scan, final NavigableSet<byte[]> targetCols, long readPt)
+            throws IOException {
+        storeEngine.readLock();
+        try {
+            ScanInfo scanInfo = getScanInfo();
+            return createScanner(scan, scanInfo, targetCols, readPt);
+        } finally {
+            storeEngine.readUnlock();
+        }
+    }
+
+    protected KeyValueScanner createScanner(Scan scan, ScanInfo scanInfo,
+            NavigableSet<byte[]> targetCols, long readPt) throws IOException {
+        // return scan.isReversed()
+        // ? new ReversedStoreScanner(this, scanInfo, scan, targetCols, readPt)
+        return (KeyValueScanner) new StoreScanner(this, scanInfo, scan, targetCols, readPt);
+    }
+
+    // protected KeyValueScanner createFileStoreScanner(Scan scan, ScanInfo
+    // scanInfo,
+    // NavigableSet<byte[]> targetCols, long readPt) throws IOException {
+    // // return scan.isReversed()
+    // // ? new ReversedStoreScanner(this, scanInfo, scan, targetCols, readPt)
+    // return (KeyValueScanner) new StoreScanner(this, scanInfo, scan, targetCols,
+    // readPt, true);
+    // }
+
+    public ScanInfo getScanInfo() {
+        return scanInfo;
+    }
+
     /**
      * Adds or replaces the specified KeyValues.
      * <p>
@@ -324,6 +396,21 @@ public class HStore implements Store {
         } finally {
             this.storeEngine.readUnlock();
         }
+    }
+
+    public static long determineTTLFromFamily(final ColumnFamilyDescriptor family) {
+        // HCD.getTimeToLive returns ttl in seconds. Convert to milliseconds.
+        long ttl = family.getTimeToLive();
+        if (ttl == HConstants.FOREVER) {
+            // Default is unlimited ttl.
+            ttl = Long.MAX_VALUE;
+        } else if (ttl == -1) {
+            ttl = Long.MAX_VALUE;
+        } else {
+            // Second -> ms adjust for user data
+            ttl *= 1000;
+        }
+        return ttl;
     }
 
     /**
@@ -358,5 +445,123 @@ public class HStore implements Store {
                 memstoreSizing.getOffHeapSize() - memstoreSizing1.getOffHeapSize(),
                 memstoreSizing.getCellsCount() - memstoreSizing1.getCellsCount());
         return memstoreSizing1;
+    }
+
+    public List<org.apache.hadoop.hbase.regionserver.KeyValueScanner> getFileStoreSacnners(boolean cacheBlocks,
+            boolean usePread,
+            boolean isCompaction, ScanQueryMatcher matcher, byte[] startRow, boolean includeStartRow,
+            byte[] stopRow, boolean includeStopRow, long readPt) throws IOException {
+        Collection<HStoreFile> storeFilesToScan;
+        this.storeEngine.readLock();
+        try {
+            storeFilesToScan = this.storeEngine.getStoreFileManager().getFilesForScan(startRow,
+                    includeStartRow, stopRow, includeStopRow);
+        } finally {
+            this.storeEngine.readUnlock();
+        }
+        List<StoreFileScanner> sfScanners = null;
+        // new <org.apache.hadoop.hbase.regionserver.KeyValueScanner>();
+        try {
+            // First the store file scanners
+
+            // TODO this used to get the store files in descending order,
+            // but now we get them in ascending order, which I think is
+            // actually more correct, since memstore get put at the end.
+            sfScanners = StoreFileScanner.getScannersForStoreFiles(
+                    storeFilesToScan, cacheBlocks, usePread, isCompaction, false, matcher,
+                    readPt);
+            List<org.apache.hadoop.hbase.regionserver.KeyValueScanner> memStoreScanners = new ArrayList();
+            memStoreScanners.addAll(sfScanners);
+            return memStoreScanners;
+        } catch (Throwable t) {
+            clearAndCloseStoreFileScanner(sfScanners);
+            throw t instanceof IOException ? (IOException) t : new IOException(t);
+        }
+    }
+
+    public List<KeyValueScanner> getScanners(boolean cacheBlocks, boolean usePread,
+            boolean isCompaction, ScanQueryMatcher matcher, byte[] startRow, boolean includeStartRow,
+            byte[] stopRow, boolean includeStopRow, long readPt) throws IOException {
+        // Collection<HStoreFile> storeFilesToScan;
+        List<KeyValueScanner> memStoreScanners;
+        this.storeEngine.readLock();
+        try {
+            // storeFilesToScan =
+            // this.storeEngine.getStoreFileManager().getFilesForScan(startRow,
+            // includeStartRow, stopRow, includeStopRow);
+            memStoreScanners = this.memstore.getScanners(readPt);
+        } finally {
+            this.storeEngine.readUnlock();
+        }
+
+        try {
+            // First the store file scanners
+
+            // TODO this used to get the store files in descending order,
+            // but now we get them in ascending order, which I think is
+            // actually more correct, since memstore get put at the end.
+            // List<StoreFileScanner> sfScanners =
+            // StoreFileScanner.getScannersForStoreFiles(
+            // storeFilesToScan, cacheBlocks, usePread, isCompaction, false, matcher,
+            // readPt);
+            List<KeyValueScanner> scanners = new ArrayList<>();
+            // scanners.addAll(sfScanners);
+            // Then the memstore scanners
+            scanners.addAll(memStoreScanners);
+            return scanners;
+        } catch (Throwable t) {
+            clearAndClose(memStoreScanners);
+            throw t instanceof IOException ? (IOException) t : new IOException(t);
+        }
+    }
+
+    private static void clearAndCloseStoreFileScanner(
+            List<StoreFileScanner> sfScanners) {
+        if (sfScanners == null) {
+            return;
+        }
+        for (org.apache.hadoop.hbase.regionserver.KeyValueScanner s : sfScanners) {
+            s.close();
+        }
+        sfScanners.clear();
+    }
+
+    private static void clearAndClose(List<KeyValueScanner> scanners) {
+        if (scanners == null) {
+            return;
+        }
+        for (KeyValueScanner s : scanners) {
+            s.close();
+        }
+        scanners.clear();
+    }
+
+    public List<KeyValueScanner> recreateScanners(List<KeyValueScanner> scannersToClose, boolean cacheBlocks, boolean b,
+            boolean c, ScanQueryMatcher matcher, byte[] startRow, boolean includeStartRow, byte[] stopRow,
+            boolean includeStopRow, long readPt, boolean d) {
+        // TODO
+        return null;
+    }
+
+    @Override
+    public long getMemStoreFlushSize() {
+        return this.region.memstoreFlushSize;
+    }
+
+    @Override
+    public long getStoreFileTtl() {
+        // TTL only applies if there's no MIN_VERSIONs setting on the column.
+        return (this.scanInfo.getMinVersions() == 0) ? this.scanInfo.getTtl() : Long.MAX_VALUE;
+
+    }
+
+    @Override
+    public long getCompactionCheckMultiplier() {
+        return this.compactionCheckMultiplier;
+    }
+
+    @Override
+    public long getBlockingFileCount() {
+        return blockingFileCount;
     }
 }

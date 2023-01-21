@@ -196,6 +196,35 @@ public class HMasterCommandLine extends ServerCommandLine {
         t.put(put);
     }
 
+    private Result get(Connection connection, List<String> args) {
+        String tableName = args.get(1);
+        String rowKey = args.get(2);
+        String qualifer = args.get(3);
+        try {
+            Table table = connection.getTable(TableName.valueOf(tableName));
+            Get get = new Get(Bytes.toBytes(rowKey));
+            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes(qualifer));
+            Result result = table.get(get);
+            System.out.println("Get: " + result);
+            return result;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return new Result();
+    }
+
+    private void delete(Connection connection, List<String> args) throws IOException {
+        String tableName = args.get(1);
+        String rowKey = args.get(2);
+        String qualifer = args.get(3);
+
+        Delete del = new Delete(Bytes.toBytes(rowKey));
+        del.addColumn(Bytes.toBytes("cf"), Bytes.toBytes(qualifer));
+        del.setDurability(Durability.ASYNC_WAL);
+        Table t = connection.getTable(TableName.valueOf(tableName));
+        t.delete(del);
+    }
+
     @Override
     public int run(String[] args) throws Exception {
         boolean shutDownCluster = false;
@@ -265,25 +294,6 @@ public class HMasterCommandLine extends ServerCommandLine {
         return 0;
     }
 
-    private void mutate(Connection connection) {
-        try {
-            Table table = connection.getTable(TableName.valueOf("test"));
-            Put put = new Put(Bytes.toBytes("row1"));
-            put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q1"), Bytes.toBytes("value1"));
-            table.put(put);
-            Get get = new Get(Bytes.toBytes("row1"));
-            Result result = table.get(get);
-            System.out.println("Get: " + result);
-            Scan scan = new Scan();
-            ResultScanner scanner = table.getScanner(scan);
-            for (Result scannerResult : scanner) {
-                System.out.println("Scan: " + scannerResult);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
     private void shell() throws IOException {
         Configuration conf = getConf();
         conf.addResource(null, "hbase-site.xml");
@@ -296,6 +306,11 @@ public class HMasterCommandLine extends ServerCommandLine {
         Admin admin = connection.getAdmin();
 
         int i = 0;
+        String tableName;
+        String rowKey;
+        String columnFamily;
+        String value;
+
         while (true) {
             System.out.printf("hbase(main):{}> ", i++);
             inputCommand = scanner.nextLine();
@@ -315,8 +330,33 @@ public class HMasterCommandLine extends ServerCommandLine {
                     admin.deleteTable(TableName.valueOf(scanner.nextLine()));
                     break;
                 case "put":
-                    this.put(myConnection, Arrays.asList("put", "test", "row1", "q1", "value1"));
+                    System.out.print("Enter table name: ");
+                    tableName = scanner.nextLine();
+                    System.out.print("Enter rowKey: ");
+                    rowKey = scanner.nextLine();
+                    System.out.print("Enter column: ");
+                    columnFamily = scanner.nextLine();
+                    System.out.print("Enter value: ");
+                    value = scanner.nextLine();
+                    this.put(myConnection, Arrays.asList("put", tableName, rowKey, columnFamily, value));
                     break;
+                case "get":
+                    System.out.print("Enter table name: ");
+                    tableName = scanner.nextLine();
+                    System.out.print("Enter rowKey: ");
+                    rowKey = scanner.nextLine();
+                    System.out.print("Enter column: ");
+                    columnFamily = scanner.nextLine();
+                    this.get(myConnection, Arrays.asList("get", tableName, rowKey, columnFamily));
+                    break;
+                case "delete":
+                    System.out.print("Enter table name: ");
+                    tableName = scanner.nextLine();
+                    System.out.print("Enter rowKey: ");
+                    rowKey = scanner.nextLine();
+                    System.out.print("Enter column: ");
+                    columnFamily = scanner.nextLine();
+                    this.delete(myConnection, Arrays.asList("delete", tableName, rowKey, columnFamily));
                 case "":
                     break;
                 default:

@@ -135,7 +135,7 @@ public final class StoreUtils {
     /**
      * Gets the mid point of the largest file passed in as split point.
      */
-    static Optional<byte[]> getSplitPoint(Collection<HStoreFile> storefiles,
+    public static Optional<byte[]> getSplitPoint(Collection<HStoreFile> storefiles,
             CellComparator comparator) throws IOException {
         Optional<HStoreFile> largestFile = StoreUtils.getLargestFile(storefiles);
         return largestFile.isPresent()

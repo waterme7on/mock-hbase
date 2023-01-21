@@ -11,6 +11,9 @@ import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionStateTransition.TransitionCode;
 
 public interface RegionServerServices extends Server, OnlineRegions {
+
+    Object getNonceManager();
+
     boolean isClusterUp();
 
     WAL getWAL(RegionInfo regionInfo) throws IOException;

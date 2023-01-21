@@ -4,7 +4,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
 import org.apache.hadoop.hbase.Cell;
-import org.apache.hadoop.hbase.HBaseInterfaceAudience;
 import org.waterme7on.hbase.NoLimitScannerContext;
 import org.waterme7on.hbase.ScannerContext;
 

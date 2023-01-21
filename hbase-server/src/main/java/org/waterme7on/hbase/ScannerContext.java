@@ -123,7 +123,7 @@ public class ScannerContext {
      */
     final ServerSideScanMetrics metrics;
 
-    ScannerContext(boolean keepProgress, LimitFields limitsToCopy, boolean trackMetrics) {
+    public ScannerContext(boolean keepProgress, LimitFields limitsToCopy, boolean trackMetrics) {
         this.limits = new LimitFields();
         if (limitsToCopy != null) {
             this.limits.copy(limitsToCopy);
@@ -163,11 +163,11 @@ public class ScannerContext {
      *         should not be considered and should instead be wiped away via
      *         {@link #clearProgress()}
      */
-    boolean getKeepProgress() {
+    public boolean getKeepProgress() {
         return keepProgress;
     }
 
-    void setKeepProgress(boolean keepProgress) {
+    public void setKeepProgress(boolean keepProgress) {
         this.keepProgress = keepProgress;
     }
 
@@ -175,7 +175,7 @@ public class ScannerContext {
      * Progress towards the batch limit has been made. Increment internal tracking
      * of batch progress
      */
-    void incrementBatchProgress(int batch) {
+    public void incrementBatchProgress(int batch) {
         int currentBatch = progress.getBatch();
         progress.setBatch(currentBatch + batch);
     }
@@ -184,7 +184,7 @@ public class ScannerContext {
      * Progress towards the size limit has been made. Increment internal tracking of
      * size progress
      */
-    void incrementSizeProgress(long dataSize, long heapSize) {
+    public void incrementSizeProgress(long dataSize, long heapSize) {
         long curDataSize = progress.getDataSize();
         progress.setDataSize(curDataSize + dataSize);
         long curHeapSize = progress.getHeapSize();
@@ -197,18 +197,18 @@ public class ScannerContext {
      * @deprecated will be removed in 3.0
      */
     @Deprecated
-    void updateTimeProgress() {
+    public void updateTimeProgress() {
     }
 
-    int getBatchProgress() {
+    public int getBatchProgress() {
         return progress.getBatch();
     }
 
-    long getDataSizeProgress() {
+    public long getDataSizeProgress() {
         return progress.getDataSize();
     }
 
-    long getHeapSizeProgress() {
+    public long getHeapSizeProgress() {
         return progress.getHeapSize();
     }
 
@@ -216,7 +216,7 @@ public class ScannerContext {
      * @deprecated will be removed in 3.0
      */
     @Deprecated
-    long getTimeProgress() {
+    public long getTimeProgress() {
         return EnvironmentEdgeManager.currentTime();
     }
 
@@ -224,21 +224,21 @@ public class ScannerContext {
      * @deprecated will be removed in 3.0
      */
     @Deprecated
-    void setProgress(int batchProgress, long sizeProgress, long heapSizeProgress, long timeProgress) {
+    public void setProgress(int batchProgress, long sizeProgress, long heapSizeProgress, long timeProgress) {
         setProgress(batchProgress, sizeProgress, heapSizeProgress);
     }
 
-    void setProgress(int batchProgress, long sizeProgress, long heapSizeProgress) {
+    public void setProgress(int batchProgress, long sizeProgress, long heapSizeProgress) {
         setBatchProgress(batchProgress);
         setSizeProgress(sizeProgress, heapSizeProgress);
     }
 
-    void setSizeProgress(long dataSizeProgress, long heapSizeProgress) {
+    public void setSizeProgress(long dataSizeProgress, long heapSizeProgress) {
         progress.setDataSize(dataSizeProgress);
         progress.setHeapSize(heapSizeProgress);
     }
 
-    void setBatchProgress(int batchProgress) {
+    public void setBatchProgress(int batchProgress) {
         progress.setBatch(batchProgress);
     }
 
@@ -254,7 +254,7 @@ public class ScannerContext {
      * reset to initial
      * values
      */
-    void clearProgress() {
+    public void clearProgress() {
         progress.setFields(0, 0, 0);
     }
 
@@ -269,7 +269,7 @@ public class ScannerContext {
      * 
      * @return The state that was passed in.
      */
-    NextState setScannerState(NextState state) {
+    public NextState setScannerState(NextState state) {
         if (!NextState.isValidState(state)) {
             throw new IllegalArgumentException("Cannot set to invalid state: " + state);
         }
@@ -283,57 +283,57 @@ public class ScannerContext {
      *         because we have reached
      *         a limit in the middle of a row
      */
-    boolean mayHaveMoreCellsInRow() {
+    public boolean mayHaveMoreCellsInRow() {
         return scannerState == NextState.SIZE_LIMIT_REACHED_MID_ROW
                 || scannerState == NextState.TIME_LIMIT_REACHED_MID_ROW
                 || scannerState == NextState.BATCH_LIMIT_REACHED;
     }
 
     /** Returns true if the batch limit can be enforced in the checker's scope */
-    boolean hasBatchLimit(LimitScope checkerScope) {
+    public boolean hasBatchLimit(LimitScope checkerScope) {
         return limits.canEnforceBatchLimitFromScope(checkerScope) && limits.getBatch() > 0;
     }
 
     /** Returns true if the size limit can be enforced in the checker's scope */
-    boolean hasSizeLimit(LimitScope checkerScope) {
+    public boolean hasSizeLimit(LimitScope checkerScope) {
         return limits.canEnforceSizeLimitFromScope(checkerScope)
                 && (limits.getDataSize() > 0 || limits.getHeapSize() > 0);
     }
 
     /** Returns true if the time limit can be enforced in the checker's scope */
-    boolean hasTimeLimit(LimitScope checkerScope) {
+    public boolean hasTimeLimit(LimitScope checkerScope) {
         return limits.canEnforceTimeLimitFromScope(checkerScope)
                 && (limits.getTime() > 0 || returnImmediately);
     }
 
     /** Returns true if any limit can be enforced within the checker's scope */
-    boolean hasAnyLimit(LimitScope checkerScope) {
+    public boolean hasAnyLimit(LimitScope checkerScope) {
         return hasBatchLimit(checkerScope) || hasSizeLimit(checkerScope) || hasTimeLimit(checkerScope);
     }
 
     /**
      * @param scope The scope in which the size limit will be enforced
      */
-    void setSizeLimitScope(LimitScope scope) {
+    public void setSizeLimitScope(LimitScope scope) {
         limits.setSizeScope(scope);
     }
 
     /**
      * @param scope The scope in which the time limit will be enforced
      */
-    void setTimeLimitScope(LimitScope scope) {
+    public void setTimeLimitScope(LimitScope scope) {
         limits.setTimeScope(scope);
     }
 
-    int getBatchLimit() {
+    public int getBatchLimit() {
         return limits.getBatch();
     }
 
-    long getDataSizeLimit() {
+    public long getDataSizeLimit() {
         return limits.getDataSize();
     }
 
-    long getTimeLimit() {
+    public long getTimeLimit() {
         return limits.getTime();
     }
 
@@ -342,7 +342,7 @@ public class ScannerContext {
      * @return true when the limit is enforceable from the checker's scope and it
      *         has been reached
      */
-    boolean checkBatchLimit(LimitScope checkerScope) {
+    public boolean checkBatchLimit(LimitScope checkerScope) {
         return hasBatchLimit(checkerScope) && progress.getBatch() >= limits.getBatch();
     }
 
@@ -351,7 +351,7 @@ public class ScannerContext {
      * @return true when the limit is enforceable from the checker's scope and it
      *         has been reached
      */
-    boolean checkSizeLimit(LimitScope checkerScope) {
+    public boolean checkSizeLimit(LimitScope checkerScope) {
         return hasSizeLimit(checkerScope) && (progress.getDataSize() >= limits.getDataSize()
                 || progress.getHeapSize() >= limits.getHeapSize());
     }
@@ -364,7 +364,7 @@ public class ScannerContext {
      * @return true when the limit is enforceable from the checker's scope and it
      *         has been reached
      */
-    boolean checkTimeLimit(LimitScope checkerScope) {
+    public boolean checkTimeLimit(LimitScope checkerScope) {
         return hasTimeLimit(checkerScope)
                 && (returnImmediately || EnvironmentEdgeManager.currentTime() >= limits.getTime());
     }
@@ -374,20 +374,20 @@ public class ScannerContext {
      * @return true when some limit is enforceable from the checker's scope and it
      *         has been reached
      */
-    boolean checkAnyLimitReached(LimitScope checkerScope) {
+    public boolean checkAnyLimitReached(LimitScope checkerScope) {
         return checkSizeLimit(checkerScope) || checkBatchLimit(checkerScope)
                 || checkTimeLimit(checkerScope);
     }
 
-    Cell getLastPeekedCell() {
+    public Cell getLastPeekedCell() {
         return lastPeekedCell;
     }
 
-    void setLastPeekedCell(Cell lastPeekedCell) {
+    public void setLastPeekedCell(Cell lastPeekedCell) {
         this.lastPeekedCell = lastPeekedCell;
     }
 
-    void returnImmediately() {
+    public void returnImmediately() {
         this.returnImmediately = true;
     }
 

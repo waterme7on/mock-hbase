@@ -139,6 +139,12 @@ public class HRegion implements Region {
     // Stop updates lock
     private final ReentrantReadWriteLock updatesLock = new ReentrantReadWriteLock();
     final ConcurrentHashMap<RegionScanner, Long> scannerReadPoints = new ConcurrentHashMap<>();
+    /**
+     * The default setting for whether to enable on-demand CF loading for scan
+     * requests to this
+     * region. Requests can override it.
+     */
+    private boolean isLoadingCfsOnDemandDefault = false;
 
     // Context: During replay we want to ensure that we do not lose any data. So, we
     // have to be conservative in how we replay wals. For each store, we calculate
@@ -485,6 +491,10 @@ public class HRegion implements Region {
     public long getCheckAndMutateChecksPassed() {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'getCheckAndMutateChecksPassed'");
+    }
+
+    public boolean isLoadingCfsOnDemandDefault() {
+        return this.isLoadingCfsOnDemandDefault;
     }
 
     @Override
@@ -956,16 +966,80 @@ public class HRegion implements Region {
         }, () -> createRegionSpan("Region.delete"));
     }
 
-    @Override
-    public Result get(Get get) throws IOException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'get'");
+    public long getReadPoint(IsolationLevel isolationLevel) {
+        if (isolationLevel != null && isolationLevel == IsolationLevel.READ_UNCOMMITTED) {
+            // This scan can read even uncommitted transactions
+            return Long.MAX_VALUE;
+        }
+        return mvcc.getReadPoint();
     }
 
     @Override
-    public RegionScanner getScanner(Scan scan) throws IOException {
-        // TODO
-        return null;
+    public Result get(Get get) throws IOException {
+        prepareGet(get);
+        List<Cell> results = get(get, true);
+        boolean stale = this.getRegionInfo().getReplicaId() != 0;
+        return Result.create(results, get.isCheckExistenceOnly() ? !results.isEmpty() : null, stale);
+    }
+
+    void prepareGet(final Get get) throws IOException {
+        checkRow(get.getRow(), "Get");
+        // Verify families are all valid
+        if (get.hasFamilies()) {
+            for (byte[] family : get.familySet()) {
+                checkFamily(family);
+            }
+        } else { // Adding all families to scanner
+            for (byte[] family : this.htableDescriptor.getColumnFamilyNames()) {
+                get.addFamily(family);
+            }
+        }
+    }
+
+    @Override
+    public RegionScannerImpl getScanner(Scan scan) throws IOException {
+        return getScanner(scan, null);
+    }
+
+    @Override
+    public RegionScannerImpl getScanner(Scan scan, List<KeyValueScanner> additionalScanners)
+            throws IOException {
+        return getScanner(scan, additionalScanners, HConstants.NO_NONCE, HConstants.NO_NONCE);
+    }
+
+    private RegionScannerImpl getScanner(Scan scan, List<KeyValueScanner> additionalScanners,
+            long nonceGroup, long nonce) throws IOException {
+        return TraceUtil.trace(() -> {
+            startRegionOperation(Operation.SCAN);
+            try {
+                // Verify families are all valid
+                if (!scan.hasFamilies()) {
+                    // Adding all families to scanner
+                    for (byte[] family : this.htableDescriptor.getColumnFamilyNames()) {
+                        scan.addFamily(family);
+                    }
+                } else {
+                    for (byte[] family : scan.getFamilyMap().keySet()) {
+                        checkFamily(family);
+                    }
+                }
+                return instantiateRegionScanner(scan, additionalScanners, nonceGroup, nonce);
+            } finally {
+                closeRegionOperation(Operation.SCAN);
+            }
+        }, ("HRegion.getScanner"));
+    }
+
+    protected RegionScannerImpl instantiateRegionScanner(Scan scan,
+            List<KeyValueScanner> additionalScanners, long nonceGroup, long nonce) throws IOException {
+        // if (scan.isReversed()) {
+        // if (scan.getFilter() != null) {
+        // scan.getFilter().setReversed(true);
+        // }
+        // // return new ReversedRegionScannerImpl(scan, additionalScanners, this,
+        // nonceGroup, nonce);
+        // }
+        return new RegionScannerImpl(scan, additionalScanners, this, nonceGroup, nonce);
     }
 
     @Override

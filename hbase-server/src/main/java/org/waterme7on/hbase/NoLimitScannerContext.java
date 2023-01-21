@@ -37,69 +37,69 @@ public class NoLimitScannerContext extends ScannerContext {
     }
 
     @Override
-    void setKeepProgress(boolean keepProgress) {
+    public void setKeepProgress(boolean keepProgress) {
         // Do nothing. NoLimitScannerContext instances are immutable post-construction
     }
 
     @Override
-    void setBatchProgress(int batchProgress) {
+    public void setBatchProgress(int batchProgress) {
         // Do nothing. NoLimitScannerContext instances are immutable post-construction
     }
 
     @Override
-    void setSizeProgress(long sizeProgress, long heapSizeProgress) {
+    public void setSizeProgress(long sizeProgress, long heapSizeProgress) {
         // Do nothing. NoLimitScannerContext instances are immutable post-construction
     }
 
     @Override
-    void setProgress(int batchProgress, long sizeProgress, long heapSizeProgress) {
+    public void setProgress(int batchProgress, long sizeProgress, long heapSizeProgress) {
         // Do nothing. NoLimitScannerContext instances are immutable post-construction
     }
 
     @Override
-    void clearProgress() {
+    public void clearProgress() {
         // Do nothing. NoLimitScannerContext instances are immutable post-construction
     }
 
     @Override
-    void setSizeLimitScope(LimitScope scope) {
+    public void setSizeLimitScope(LimitScope scope) {
         // Do nothing. NoLimitScannerContext instances are immutable post-construction
     }
 
     @Override
-    void setTimeLimitScope(LimitScope scope) {
+    public void setTimeLimitScope(LimitScope scope) {
         // Do nothing. NoLimitScannerContext instances are immutable post-construction
     }
 
     @Override
-    NextState setScannerState(NextState state) {
+    public NextState setScannerState(NextState state) {
         // Do nothing. NoLimitScannerContext instances are immutable post-construction
         return state;
     }
 
     @Override
-    boolean checkBatchLimit(LimitScope checkerScope) {
+    public boolean checkBatchLimit(LimitScope checkerScope) {
         // No limits can be specified, thus return false to indicate no limit has been
         // reached.
         return false;
     }
 
     @Override
-    boolean checkSizeLimit(LimitScope checkerScope) {
+    public boolean checkSizeLimit(LimitScope checkerScope) {
         // No limits can be specified, thus return false to indicate no limit has been
         // reached.
         return false;
     }
 
     @Override
-    boolean checkTimeLimit(LimitScope checkerScope) {
+    public boolean checkTimeLimit(LimitScope checkerScope) {
         // No limits can be specified, thus return false to indicate no limit has been
         // reached.
         return false;
     }
 
     @Override
-    boolean checkAnyLimitReached(LimitScope checkerScope) {
+    public boolean checkAnyLimitReached(LimitScope checkerScope) {
         return false;
     }
 }

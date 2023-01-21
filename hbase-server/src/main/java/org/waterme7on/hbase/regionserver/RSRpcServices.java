@@ -8,10 +8,13 @@ import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.CheckAndMutate;
 import org.apache.hadoop.hbase.client.CheckAndMutateResult;
 import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.CellScanner;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.io.ByteBuffAllocator;
@@ -45,6 +48,7 @@ import org.waterme7on.hbase.Server;
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.AdminService;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.ClearCompactionQueuesRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos.ClearCompactionQueuesResponse;
@@ -128,6 +132,9 @@ import org.waterme7on.hbase.master.MasterRpcServices;
 import org.waterme7on.hbase.regionserver.handler.OpenMetaHandler;
 import org.waterme7on.hbase.regionserver.handler.OpenRegionHandler;
 import org.waterme7on.hbase.util.CancelableProgressable;
+import org.waterme7on.hbase.ipc.RpcCall;
+import org.waterme7on.hbase.ipc.RpcCallContext;
+import org.waterme7on.hbase.ipc.RpcCallback;
 import org.waterme7on.hbase.master.HMaster;
 
 import java.io.IOException;
@@ -370,8 +377,90 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
 
     @Override
     public GetResponse get(RpcController controller, GetRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'get'");
+        HRegion region = null;
+        try {
+            checkOpen();
+            region = getRegion(request.getRegion());
+            GetResponse.Builder builder = GetResponse.newBuilder();
+            ClientProtos.Get get = request.getGet();
+            Result r = null;
+            RpcCallContext context = RpcServer.getCurrentCall().orElse(null);
+            Get clientGet = ProtobufUtil.toGet(get);
+            if (context != null) {
+                r = get(clientGet, (region), null, context);
+            } else {
+                // for test purpose
+                r = region.get(clientGet);
+            }
+            LOG.debug("{}, {}", clientGet, r);
+            ClientProtos.Result pbr;
+            if (isClientCellBlockSupport(context) && controller instanceof HBaseRpcController) {
+                pbr = ProtobufUtil.toResultNoData(r);
+                ((HBaseRpcController) controller)
+                        .setCellScanner(CellUtil.createCellScanner(r.rawCells()));
+                addSize(context, r, null);
+            } else {
+                pbr = ProtobufUtil.toResult(r);
+            }
+            builder.setResult(pbr);
+            return builder.build();
+        } catch (Exception e) {
+            throw new ServiceException(e);
+        }
+
+    }
+
+    private Result get(Get get, HRegion region, RpcCallback closeCallBack, RpcCallContext context) throws IOException {
+        region.prepareGet(get);
+        boolean stale = region.getRegionInfo().getReplicaId() != 0;
+        // This method is almost the same as HRegion#get.
+        List<Cell> results = new ArrayList<>();
+        long before = EnvironmentEdgeManager.currentTime();
+
+        // pre-get CP hook
+
+        // if (region.getCoprocessorHost() != null) {
+        // if (region.getCoprocessorHost().preGet(get, results)) {
+        // region.metricsUpdateForGet(results, before);
+        // return Result.create(results, get.isCheckExistenceOnly() ? !results.isEmpty()
+        // : null,
+        // stale);
+        // }
+        // }
+        Scan scan = new Scan(get);
+        if (scan.getLoadColumnFamiliesOnDemandValue() == null) {
+            scan.setLoadColumnFamiliesOnDemand(region.isLoadingCfsOnDemandDefault());
+        }
+        RegionScannerImpl scanner = null;
+        try {
+            scanner = region.getScanner(scan);
+            scanner.next(results);
+        } finally {
+            if (scanner != null) {
+                if (closeCallBack == null) {
+                    // If there is a context then the scanner can be added to the current
+                    // RpcCallContext. The rpc callback will take care of closing the
+                    // scanner, for eg in case
+                    // of get()
+                    context.setCallBack(scanner);
+                } else {
+                    // The call is from multi() where the results from the get() are
+                    // aggregated and then send out to the
+                    // rpc. The rpccall back will close all such scanners created as part
+                    // of multi().
+                    closeCallBack.addScanner(scanner);
+                }
+            }
+        }
+
+        // post-get CP hook
+        // if (region.getCoprocessorHost() != null) {
+        // region.getCoprocessorHost().postGet(get, results);
+        // }
+        // region.metricsUpdateForGet(results, before);
+
+        return Result.create(results, get.isCheckExistenceOnly() ? !results.isEmpty() : null, stale);
+
     }
 
     /**
@@ -457,7 +546,6 @@ public class RSRpcServices implements HBaseRPCErrorHandler, PriorityFunction, Ad
 
     @Override
     public MutateResponse mutate(RpcController controller, MutateRequest request) throws ServiceException {
-        // TODO Auto-generated method stub
         HBaseRpcController rpcc = (HBaseRpcController) controller;
         CellScanner cellScanner = controller != null ? rpcc.cellScanner() : null;
         RpcCallContext context = RpcServer.getCurrentCall().orElse(null);
