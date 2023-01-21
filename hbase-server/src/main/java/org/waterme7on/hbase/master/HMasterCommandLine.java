@@ -199,13 +199,13 @@ public class HMasterCommandLine extends ServerCommandLine {
     private Result get(Connection connection, List<String> args) {
         String tableName = args.get(1);
         String rowKey = args.get(2);
-        String qualifer = args.get(3);
+        // String qualifer = args.get(3);
         try {
             Table table = connection.getTable(TableName.valueOf(tableName));
             Get get = new Get(Bytes.toBytes(rowKey));
-            get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes(qualifer));
+            // get.addColumn(Bytes.toBytes("cf"), Bytes.toBytes(qualifer));
             Result result = table.get(get);
-            System.out.println("Get: " + result);
+            System.out.println("Get result: " + result.toString());
             return result;
         } catch (IOException e) {
             e.printStackTrace();
@@ -216,10 +216,9 @@ public class HMasterCommandLine extends ServerCommandLine {
     private void delete(Connection connection, List<String> args) throws IOException {
         String tableName = args.get(1);
         String rowKey = args.get(2);
-        String qualifer = args.get(3);
+        // String qualifer = args.get(3);
 
         Delete del = new Delete(Bytes.toBytes(rowKey));
-        del.addColumn(Bytes.toBytes("cf"), Bytes.toBytes(qualifer));
         del.setDurability(Durability.ASYNC_WAL);
         Table t = connection.getTable(TableName.valueOf(tableName));
         t.delete(del);
@@ -354,9 +353,9 @@ public class HMasterCommandLine extends ServerCommandLine {
                     tableName = scanner.nextLine();
                     System.out.print("Enter rowKey: ");
                     rowKey = scanner.nextLine();
-                    System.out.print("Enter column: ");
-                    columnFamily = scanner.nextLine();
-                    this.delete(myConnection, Arrays.asList("delete", tableName, rowKey, columnFamily));
+                    // System.out.print("Enter column: ");
+                    // columnFamily = scanner.nextLine();
+                    this.delete(myConnection, Arrays.asList("delete", tableName, rowKey));
                 case "":
                     break;
                 default:

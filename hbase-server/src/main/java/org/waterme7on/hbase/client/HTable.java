@@ -86,7 +86,10 @@ public class HTable implements Table {
         this.rpcTimeoutMs = builder.rpcTimeout;
         this.readRpcTimeoutMs = builder.readRpcTimeout;
         this.writeRpcTimeoutMs = builder.writeRpcTimeout;
-        for (;;) {
+        this.regionName = null;
+        this.serverName = null;
+
+        for (int i = 0; i < 10; i++) {
             try {
                 TableLocationRequest tableMapRequest = TableLocationRequest.newBuilder()
                         .setTableName(tableName.getNameAsString()).build();
@@ -100,6 +103,9 @@ public class HTable implements Table {
             } catch (Exception e) {
                 continue;
             }
+        }
+        if (this.regionName == null || this.serverName == null) {
+            throw new RuntimeException("Failed to get region name and server name");
         }
 
     }
@@ -136,7 +142,7 @@ public class HTable implements Table {
                 ClientProtos.ClientService.BlockingInterface stub = (ClientProtos.ClientService.BlockingInterface) this.connection
                         .getClient(ServerName.parseServerName(serverName));
                 ClientProtos.MutateResponse res = stub.mutate(rpcControllerFactory.newController(), request);
-                LOG.debug("HTable.put - {}, {}", put.toString(), res);
+                LOG.debug("HTable.put - {}, {}", put.toString(), res.getResult().toString());
             }, "HTable.put");
         } catch (Exception e) {
             throw new IOException(e);
@@ -163,7 +169,7 @@ public class HTable implements Table {
             HBaseRpcController rpcController = rpcControllerFactory.newController();
             response = stub.get(rpcController, request);
 
-            LOG.debug("HTable.put - {}, {}", get.toString(), response);
+            LOG.debug("HTable.get - {}, {}", get.toString(), response.getResult().toString());
             return response == null ? null
                     : ProtobufUtil.toResult(response.getResult(), (rpcController).cellScanner());
         }, "HTable.put");
@@ -178,7 +184,7 @@ public class HTable implements Table {
                 ClientProtos.ClientService.BlockingInterface stub = (ClientProtos.ClientService.BlockingInterface) this.connection
                         .getClient(ServerName.parseServerName(serverName));
                 ClientProtos.MutateResponse res = stub.mutate(rpcControllerFactory.newController(), request);
-                LOG.debug("HTable.delete - {}, {}", delete.toString(), res);
+                LOG.debug("HTable.delete - {}, {}", delete.toString(), res.getResult().toString());
 
             }, "HTable.delete");
         } catch (Exception e) {

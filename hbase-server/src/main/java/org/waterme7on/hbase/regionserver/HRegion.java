@@ -1390,6 +1390,28 @@ public class HRegion implements Region {
                 });
     }
 
+    /**
+     * Prepare a delete for a row mutation processor
+     * 
+     * @param delete The passed delete is modified by this method. WARNING!
+     */
+    private void prepareDelete(Delete delete) throws IOException {
+        // Check to see if this is a deleteRow insert
+        if (delete.getFamilyCellMap().isEmpty()) {
+            for (byte[] family : this.htableDescriptor.getColumnFamilyNames()) {
+                // Don't eat the timestamp
+                delete.addFamily(family, delete.getTimestamp());
+            }
+        } else {
+            for (byte[] family : delete.getFamilyCellMap().keySet()) {
+                if (family == null) {
+                    throw new NoSuchColumnFamilyException("Empty family is invalid");
+                }
+                checkFamily(family);
+            }
+        }
+    }
+
     // Utility methods
     /**
      * A utility method to create new instances of HRegion based on the
@@ -2065,15 +2087,15 @@ public class HRegion implements Region {
         protected void checkAndPrepareMutation(Mutation mutation, final long timestamp)
                 throws IOException {
             region.checkRow(mutation.getRow(), "batchMutate");
-            // if (mutation instanceof Put) {
-            // // Check the families in the put. If bad, skip this one.
-            // checkAndPreparePut((Put) mutation);
-            // region.checkTimestamps(mutation.getFamilyCellMap(), timestamp);
-            // } else if (mutation instanceof Delete) {
-            // region.prepareDelete((Delete) mutation);
-            // } else if (mutation instanceof Increment || mutation instanceof Append) {
-            // region.checkFamilies(mutation.getFamilyCellMap().keySet());
-            // }
+            if (mutation instanceof Put) {
+                // // Check the families in the put. If bad, skip this one.
+                // checkAndPreparePut((Put) mutation);
+                // region.checkTimestamps(mutation.getFamilyCellMap(), timestamp);
+            } else if (mutation instanceof Delete) {
+                region.prepareDelete((Delete) mutation);
+                // } else if (mutation instanceof Increment || mutation instanceof Append) {
+                // region.checkFamilies(mutation.getFamilyCellMap().keySet());
+            }
         }
 
         protected void checkAndPrepareMutation(int index, long timestamp) throws IOException {
