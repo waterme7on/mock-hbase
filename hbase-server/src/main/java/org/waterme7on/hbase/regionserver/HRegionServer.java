@@ -234,7 +234,8 @@ public class HRegionServer extends Thread implements RegionServerServices {
             this.rpcServices.start(zooKeeper);
             this.metaRegionLocationCache = new MetaRegionLocationCache(zooKeeper);
             if (!(this instanceof HMaster)) {
-                // do not create this field for HMaster, we have another region server tracker for HMaster.
+                // do not create this field for HMaster, we have another region server tracker
+                // for HMaster.
                 this.regionServerAddressTracker = new RegionServerAddressTracker(zooKeeper, this);
             } else {
                 this.regionServerAddressTracker = null;
@@ -420,18 +421,23 @@ public class HRegionServer extends Thread implements RegionServerServices {
     public int movedRegionCacheExpiredTime() {
         return TIMEOUT_REGION_MOVED;
     }
+
     /**
-     * Cache for the meta region replica's locations. Also tracks their changes to avoid stale cache
+     * Cache for the meta region replica's locations. Also tracks their changes to
+     * avoid stale cache
      * entries. Used for serving ClientMetaService.
      */
     private final MetaRegionLocationCache metaRegionLocationCache;
     /**
-     * Cache for all the region servers in the cluster. Used for serving ClientMetaService.
+     * Cache for all the region servers in the cluster. Used for serving
+     * ClientMetaService.
      */
     private final RegionServerAddressTracker regionServerAddressTracker;
+
     public Optional<ServerName> getActiveMaster() {
         return Optional.ofNullable(masterAddressTracker.getMasterAddress());
     }
+
     public Iterator<ServerName> getRegionServers() {
         return regionServerAddressTracker.getRegionServers().iterator();
     }
@@ -528,7 +534,8 @@ public class HRegionServer extends Thread implements RegionServerServices {
                     LOG.info("Cluster down, regionserver shutting down");
                     break;
                 }
-                LOG.debug("Running, Server status - " + this.rpcServices.getRpcServer().toString() + " " + this.toString());
+                LOG.debug("Running, Server status - " + this.rpcServices.getRpcServer().toString() + " "
+                        + this.toString());
                 // LOG.debug(this.rpcServices.getServices().toString());
                 // the main run loop
                 long now = EnvironmentEdgeManager.currentTime();
@@ -1140,6 +1147,20 @@ public class HRegionServer extends Thread implements RegionServerServices {
             sb.append(",");
         }
         sb.append("}");
+        try {
+            Iterator<ServerName> svr = getRegionServers();
+            if (svr != null) {
+                sb.append("  All OnlineRegionServers:{");
+                for (; svr.hasNext();) {
+                    sb.append(svr.next().toShortString());
+                    sb.append(",");
+                }
+                sb.append("}");
+            }
+        } catch (Exception e) {
+            //
+        }
+
         return sb.toString();
     }
 }

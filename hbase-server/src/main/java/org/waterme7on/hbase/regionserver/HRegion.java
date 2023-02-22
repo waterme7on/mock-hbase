@@ -78,15 +78,13 @@ public class HRegion implements Region {
     public static final String HBASE_MAX_CELL_SIZE_KEY = "hbase.server.keyvalue.maxsize";
     public static final int DEFAULT_MAX_CELL_SIZE = 10485760;
     // Number of mutations for minibatch processing.
-    public static final String HBASE_REGIONSERVER_MINIBATCH_SIZE =
-            "hbase.regionserver.minibatch.size";
+    public static final String HBASE_REGIONSERVER_MINIBATCH_SIZE = "hbase.regionserver.minibatch.size";
     public static final int DEFAULT_HBASE_REGIONSERVER_MINIBATCH_SIZE = 20000;
     private final int miniBatchSize;
 
     // Used to guard closes
     final ReentrantReadWriteLock lock;
-    public static final String FAIR_REENTRANT_CLOSE_LOCK =
-            "hbase.regionserver.fair.region.close.lock";
+    public static final String FAIR_REENTRANT_CLOSE_LOCK = "hbase.regionserver.fair.region.close.lock";
     public static final boolean DEFAULT_FAIR_REENTRANT_CLOSE_LOCK = true;
     /** Conf key for the periodic flush interval */
 
@@ -135,8 +133,10 @@ public class HRegion implements Region {
     // are equal to or lower than maxSeqId for each store.
     // The following map is populated when opening the region
     Map<byte[], Long> maxSeqIdInStores = new TreeMap<>(Bytes.BYTES_COMPARATOR);
-    // Used to track interruptible holders of the region lock. Currently that is only RPC handler
-    // threads. Boolean value in map determines if lock holder can be interrupted, normally true,
+    // Used to track interruptible holders of the region lock. Currently that is
+    // only RPC handler
+    // threads. Boolean value in map determines if lock holder can be interrupted,
+    // normally true,
     // but may be false when thread is transiting a critical section.
     final ConcurrentHashMap<Thread, Boolean> regionLockHolders;
 
@@ -186,8 +186,7 @@ public class HRegion implements Region {
         this.maxCellSize = conf.getLong(HBASE_MAX_CELL_SIZE_KEY, DEFAULT_MAX_CELL_SIZE);
         this.htableDescriptor = htd;
         this.rsServices = rsServices;
-        this.miniBatchSize =
-                conf.getInt(HBASE_REGIONSERVER_MINIBATCH_SIZE, DEFAULT_HBASE_REGIONSERVER_MINIBATCH_SIZE);
+        this.miniBatchSize = conf.getInt(HBASE_REGIONSERVER_MINIBATCH_SIZE, DEFAULT_HBASE_REGIONSERVER_MINIBATCH_SIZE);
         this.busyWaitDuration = conf.getLong("hbase.busy.wait.duration", DEFAULT_BUSY_WAIT_DURATION);
         this.maxBusyWaitMultiplier = conf.getInt("hbase.busy.wait.multiplier.max", 2);
         if (busyWaitDuration * maxBusyWaitMultiplier <= 0L) {
@@ -195,8 +194,8 @@ public class HRegion implements Region {
                     + ") or hbase.busy.wait.multiplier.max (" + maxBusyWaitMultiplier
                     + "). Their product should be positive");
         }
-        this.maxBusyWaitDuration =
-                conf.getLong("hbase.ipc.client.call.purge.timeout", 2 * HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
+        this.maxBusyWaitDuration = conf.getLong("hbase.ipc.client.call.purge.timeout",
+                2 * HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
         this.regionLockHolders = new ConcurrentHashMap<>();
         setHTableSpecificConf();
         int tmpRowLockDuration = conf.getInt("hbase.rowlock.wait.duration", DEFAULT_ROWLOCK_WAIT_DURATION);
@@ -406,12 +405,14 @@ public class HRegion implements Region {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'startRegionOperation'");
     }
+
     private void checkReadsEnabled() throws IOException {
         if (!this.writestate.readsEnabled) {
             throw new IOException(getRegionInfo().getEncodedName()
                     + ": The region's reads are disabled. Cannot serve the request");
         }
     }
+
     @Override
     public void startRegionOperation(Operation op) throws IOException {
         boolean isInterruptableOp = false;
@@ -432,11 +433,10 @@ public class HRegion implements Region {
             default: // all others
                 break;
         }
-        if (
-                op == Operation.MERGE_REGION || op == Operation.SPLIT_REGION || op == Operation.COMPACT_REGION
-                        || op == Operation.COMPACT_SWITCH
-        ) {
-            // split, merge or compact region doesn't need to check the closing/closed state or lock the
+        if (op == Operation.MERGE_REGION || op == Operation.SPLIT_REGION || op == Operation.COMPACT_REGION
+                || op == Operation.COMPACT_SWITCH) {
+            // split, merge or compact region doesn't need to check the closing/closed state
+            // or lock the
             // region
             return;
         }
@@ -444,7 +444,8 @@ public class HRegion implements Region {
             throw new NotServingRegionException(getRegionInfo().getRegionNameAsString() + " is closing");
         }
         lock(lock.readLock());
-        // Update regionLockHolders ONLY for any startRegionOperation call that is invoked from
+        // Update regionLockHolders ONLY for any startRegionOperation call that is
+        // invoked from
         // an RPC handler
         Thread thisThread = Thread.currentThread();
         if (isInterruptableOp) {
@@ -457,12 +458,13 @@ public class HRegion implements Region {
         // The unit for snapshot is a region. So, all stores for this region must be
         // prepared for snapshot operation before proceeding.
         if (op == Operation.SNAPSHOT) {
-//            stores.values().forEach(org.apache.hadoop.hbase.regionserver.HStore::preSnapshotOperation);
+            // stores.values().forEach(org.apache.hadoop.hbase.regionserver.HStore::preSnapshotOperation);
         }
         try {
         } catch (Exception e) {
             if (isInterruptableOp) {
-                // would be harmless to remove what we didn't add but we know by 'isInterruptableOp'
+                // would be harmless to remove what we didn't add but we know by
+                // 'isInterruptableOp'
                 // if we added this thread to regionLockHolders
                 regionLockHolders.remove(thisThread);
             }
@@ -479,13 +481,12 @@ public class HRegion implements Region {
     @Override
     public void closeRegionOperation(Operation operation) throws IOException {
         if (operation == Operation.SNAPSHOT) {
-//            stores.values().forEach(org.apache.hadoop.hbase.regionserver.HStore::postSnapshotOperation);
+            // stores.values().forEach(org.apache.hadoop.hbase.regionserver.HStore::postSnapshotOperation);
         }
         Thread thisThread = Thread.currentThread();
         regionLockHolders.remove(thisThread);
         lock.readLock().unlock();
     }
-
 
     @Override
     public RowLock getRowLock(byte[] row, boolean readLock) throws IOException {
@@ -1454,20 +1455,25 @@ public class HRegion implements Region {
         return batchOp.retCodeDetails;
 
     }
+
     /**
-     * Called to do a piece of the batch that came in to {@link #batchMutate(Mutation[])} In here we
-     * also handle replay of edits on region recover. Also gets change in size brought about by
+     * Called to do a piece of the batch that came in to
+     * {@link #batchMutate(Mutation[])} In here we
+     * also handle replay of edits on region recover. Also gets change in size
+     * brought about by
      * applying {@code batchOp}.
      */
     private void doMiniBatchMutate(BatchOperation<?> batchOp) throws IOException {
         /////////////////////
+        LOG.debug("doMiniBatchMutation");
         boolean success = false;
         WALEdit walEdit = null;
         MultiVersionConcurrencyControl.WriteEntry writeEntry = null;
         boolean locked = false;
         List<Mutation> mutations = new ArrayList<>();
 
-        // We try to set up a batch in the range [batchOp.nextIndexToProcess,lastIndexExclusive)
+        // We try to set up a batch in the range
+        // [batchOp.nextIndexToProcess,lastIndexExclusive)
         MiniBatchOperationInProgress<Mutation> miniBatchOp = null;
         /** Keep track of the locks we hold so we can release them in finally clause */
         List<Region.RowLock> acquiredRowLocks = Lists.newArrayListWithCapacity(batchOp.size());
@@ -1477,7 +1483,8 @@ public class HRegion implements Region {
         checkInterrupt();
 
         try {
-            // STEP 1. Try to acquire as many locks as we can and build mini-batch of operations with
+            // STEP 1. Try to acquire as many locks as we can and build mini-batch of
+            // operations with
             // locked rows
             miniBatchOp = batchOp.lockRowsAndBuildMiniBatch(acquiredRowLocks);
 
@@ -1489,19 +1496,23 @@ public class HRegion implements Region {
                 return;
             }
             // Check for thread interrupt status in case we have been signaled from
-            // #interruptRegionOperation. Do it before we take the lock and disable interrupts for
+            // #interruptRegionOperation. Do it before we take the lock and disable
+            // interrupts for
             // the WAL append.
             checkInterrupt();
 
             lock(this.updatesLock.readLock(), miniBatchOp.getReadyToWriteCount());
             locked = true;
 
-            // From this point until memstore update this operation should not be interrupted.
+            // From this point until memstore update this operation should not be
+            // interrupted.
             disableInterrupts();
 
-            // STEP 2. Update mini batch of all operations in progress with LATEST_TIMESTAMP timestamp
+            // STEP 2. Update mini batch of all operations in progress with LATEST_TIMESTAMP
+            // timestamp
             // We should record the timestamp only after we have acquired the rowLock,
-            // otherwise, newer puts/deletes/increment/append are not guaranteed to have a newer
+            // otherwise, newer puts/deletes/increment/append are not guaranteed to have a
+            // newer
             // timestamp
 
             long now = EnvironmentEdgeManager.currentTime();
@@ -1510,40 +1521,44 @@ public class HRegion implements Region {
             // STEP 3. Build WAL edit
             List<Pair<NonceKey, WALEdit>> walEdits = batchOp.buildWALEdits(miniBatchOp);
 
-
             // STEP 4. Append the WALEdits to WAL and sync.
-//            for (Iterator<Pair<NonceKey, org.apache.hadoop.hbase.wal.WALEdit>> it = walEdits.iterator(); it.hasNext();) {
-//                Pair<NonceKey, org.apache.hadoop.hbase.wal.WALEdit> nonceKeyWALEditPair = it.next();
-//                walEdit = nonceKeyWALEditPair.getSecond();
-//                NonceKey nonceKey = nonceKeyWALEditPair.getFirst();
-//
-//                if (walEdit != null && !walEdit.isEmpty()) {
-//                    writeEntry = doWALAppend(walEdit, batchOp.durability, batchOp.getClusterIds(), now,
-//                            nonceKey.getNonceGroup(), nonceKey.getNonce(), batchOp.getOrigLogSeqNum());
-//                }
-//
-//                // Complete mvcc for all but last writeEntry (for replay case)
-//                if (it.hasNext() && writeEntry != null) {
-//                    mvcc.complete(writeEntry);
-//                    writeEntry = null;
-//                }
-//            }
+            // for (Iterator<Pair<NonceKey, org.apache.hadoop.hbase.wal.WALEdit>> it =
+            // walEdits.iterator(); it.hasNext();) {
+            // Pair<NonceKey, org.apache.hadoop.hbase.wal.WALEdit> nonceKeyWALEditPair =
+            // it.next();
+            // walEdit = nonceKeyWALEditPair.getSecond();
+            // NonceKey nonceKey = nonceKeyWALEditPair.getFirst();
+            //
+            // if (walEdit != null && !walEdit.isEmpty()) {
+            // writeEntry = doWALAppend(walEdit, batchOp.durability,
+            // batchOp.getClusterIds(), now,
+            // nonceKey.getNonceGroup(), nonceKey.getNonce(), batchOp.getOrigLogSeqNum());
+            // }
+            //
+            // // Complete mvcc for all but last writeEntry (for replay case)
+            // if (it.hasNext() && writeEntry != null) {
+            // mvcc.complete(writeEntry);
+            // writeEntry = null;
+            // }
+            // }
 
             // STEP 5. Write back to memStore
             // NOTE: writeEntry can be null here
             writeEntry = batchOp.writeMiniBatchOperationsToMemStore(miniBatchOp, writeEntry);
 
-            // STEP 6. Complete MiniBatchOperations: If required calls postBatchMutate() CP hook and
+            // STEP 6. Complete MiniBatchOperations: If required calls postBatchMutate() CP
+            // hook and
             // complete mvcc for last writeEntry
             batchOp.completeMiniBatchOperations(miniBatchOp, writeEntry);
             writeEntry = null;
             success = true;
-        } catch(Exception e) {
+        } catch (Exception e) {
 
-        }finally {
+        } finally {
 
-            // Call complete rather than completeAndWait because we probably had error if walKey != null
-//        if (writeEntry != null) mvcc.complete(writeEntry);
+            // Call complete rather than completeAndWait because we probably had error if
+            // walKey != null
+            // if (writeEntry != null) mvcc.complete(writeEntry);
 
             if (locked) {
                 this.updatesLock.readLock().unlock();
@@ -1551,10 +1566,13 @@ public class HRegion implements Region {
             releaseRowLocks(acquiredRowLocks);
         }
     }
+
     private void requestFlushIfNeeded() {
     }
+
     /**
-     * If a handler thread is eligible for interrupt, make it ineligible. Should be paired with
+     * If a handler thread is eligible for interrupt, make it ineligible. Should be
+     * paired with
      * {{@link #enableInterrupts()}.
      */
     void disableInterrupts() {
@@ -1562,7 +1580,8 @@ public class HRegion implements Region {
     }
 
     /**
-     * If a handler thread was made ineligible for interrupt via {{@link #disableInterrupts()}, make
+     * If a handler thread was made ineligible for interrupt via
+     * {{@link #disableInterrupts()}, make
      * it eligible again. No-op if interrupts are already enabled.
      */
     void enableInterrupts() {
@@ -1606,6 +1625,7 @@ public class HRegion implements Region {
             rowLocks.clear();
         }
     }
+
     /**
      * 
      * Static classes
@@ -1623,7 +1643,8 @@ public class HRegion implements Region {
         protected final OperationStatus[] retCodeDetails;
 
         public final HRegion region;
-        // reference family cell maps directly so coprocessors can mutate them if desired
+        // reference family cell maps directly so coprocessors can mutate them if
+        // desired
         protected final Map<byte[], List<Cell>>[] familyCellMaps;
 
         protected final WALEdit[] walEditsFromCoprocessors;
@@ -1650,58 +1671,75 @@ public class HRegion implements Region {
         }
 
         /**
-         * This method is potentially expensive and useful mostly for non-replay CP path.
+         * This method is potentially expensive and useful mostly for non-replay CP
+         * path.
          */
         public abstract Mutation[] getMutationsForCoprocs();
+
         boolean isAtomic() {
             return atomic;
         }
+
         public int size() {
             return operations.length;
         }
+
         public abstract Mutation getMutation(int index);
+
         /**
          * Write mini-batch operations to MemStore
          */
         public abstract MultiVersionConcurrencyControl.WriteEntry writeMiniBatchOperationsToMemStore(
-                final MiniBatchOperationInProgress<Mutation> miniBatchOp, final MultiVersionConcurrencyControl.WriteEntry writeEntry)
+                final MiniBatchOperationInProgress<Mutation> miniBatchOp,
+                final MultiVersionConcurrencyControl.WriteEntry writeEntry)
                 throws IOException;
+
         public boolean isOperationPending(int index) {
             return retCodeDetails[index].getOperationStatusCode() == OperationStatusCode.NOT_RUN;
         }
+
         /**
-         * This method completes mini-batch operations by calling postBatchMutate() CP hook (if
+         * This method completes mini-batch operations by calling postBatchMutate() CP
+         * hook (if
          * required) and completing mvcc.
          */
         public void completeMiniBatchOperations(
-                final MiniBatchOperationInProgress<Mutation> miniBatchOp, final MultiVersionConcurrencyControl.WriteEntry writeEntry)
+                final MiniBatchOperationInProgress<Mutation> miniBatchOp,
+                final MultiVersionConcurrencyControl.WriteEntry writeEntry)
                 throws IOException {
             if (writeEntry != null) {
-//                region.mvcc.completeAndWait(writeEntry);
+                // region.mvcc.completeAndWait(writeEntry);
             }
         }
+
         protected void writeMiniBatchOperationsToMemStore(
                 final MiniBatchOperationInProgress<Mutation> miniBatchOp, final long writeNumber)
                 throws IOException {
-            //TODO
-//            org.apache.hadoop.hbase.regionserver.MemStoreSizing memStoreAccounting = new NonThreadSafeMemStoreSizing();
-//            visitBatchOperations(true, miniBatchOp.getLastIndexExclusive(), (int index) -> {
-//                // We need to update the sequence id for following reasons.
-//                // 1) If the op is in replay mode, FSWALEntry#stampRegionSequenceId won't stamp sequence id.
-//                // 2) If no WAL, FSWALEntry won't be used
-//                // we use durability of the original mutation for the mutation passed by CP.
-//                if (isInReplay() || getMutation(index).getDurability() == Durability.SKIP_WAL) {
-//                    region.updateSequenceId(familyCellMaps[index].values(), writeNumber);
-//                }
-//                applyFamilyMapToMemStore(familyCellMaps[index], memStoreAccounting);
-//                return true;
-//            });
-//            // update memStore size
-//            region.incMemStoreSize(memStoreAccounting.getDataSize(), memStoreAccounting.getHeapSize(),
-//                    memStoreAccounting.getOffHeapSize(), memStoreAccounting.getCellsCount());
+            // TODO
+            // org.apache.hadoop.hbase.regionserver.MemStoreSizing memStoreAccounting = new
+            // NonThreadSafeMemStoreSizing();
+            // visitBatchOperations(true, miniBatchOp.getLastIndexExclusive(), (int index)
+            // -> {
+            // // We need to update the sequence id for following reasons.
+            // // 1) If the op is in replay mode, FSWALEntry#stampRegionSequenceId won't
+            // stamp sequence id.
+            // // 2) If no WAL, FSWALEntry won't be used
+            // // we use durability of the original mutation for the mutation passed by CP.
+            // if (isInReplay() || getMutation(index).getDurability() ==
+            // Durability.SKIP_WAL) {
+            // region.updateSequenceId(familyCellMaps[index].values(), writeNumber);
+            // }
+            // applyFamilyMapToMemStore(familyCellMaps[index], memStoreAccounting);
+            // return true;
+            // });
+            // // update memStore size
+            // region.incMemStoreSize(memStoreAccounting.getDataSize(),
+            // memStoreAccounting.getHeapSize(),
+            // memStoreAccounting.getOffHeapSize(), memStoreAccounting.getCellsCount());
         }
-        public MiniBatchOperationInProgress<Mutation>
-        lockRowsAndBuildMiniBatch(List<Region.RowLock> acquiredRowLocks) throws IOException {
+
+        public MiniBatchOperationInProgress<Mutation> lockRowsAndBuildMiniBatch(List<Region.RowLock> acquiredRowLocks)
+                throws IOException {
             int readyToWriteCount = 0;
             int lastIndexExclusive = 0;
             Region.RowLock prevRowLock = null;
@@ -1716,25 +1754,28 @@ public class HRegion implements Region {
                     continue;
                 }
 
-                // HBASE-19389 Limit concurrency of put with dense (hundreds) columns to avoid exhausting
+                // HBASE-19389 Limit concurrency of put with dense (hundreds) columns to avoid
+                // exhausting
                 // RS handlers, covering both MutationBatchOperation and ReplayBatchOperation
-                // The BAD_FAMILY/SANITY_CHECK_FAILURE cases are handled in checkAndPrepare phase and won't
+                // The BAD_FAMILY/SANITY_CHECK_FAILURE cases are handled in checkAndPrepare
+                // phase and won't
                 // pass the isOperationPending check
-//                Map<byte[], List<Cell>> curFamilyCellMap =
-//                        getMutation(lastIndexExclusive).getFamilyCellMap();
-//                try {
-//                    // start the protector before acquiring row lock considering performance, and will finish
-//                    // it when encountering exception
-//                    region.storeHotnessProtector.start(curFamilyCellMap);
-//                } catch (RegionTooBusyException rtbe) {
-//                    region.storeHotnessProtector.finish(curFamilyCellMap);
-//                    if (isAtomic()) {
-//                        throw rtbe;
-//                    }
-//                    retCodeDetails[lastIndexExclusive] =
-//                            new OperationStatus(OperationStatusCode.STORE_TOO_BUSY, rtbe.getMessage());
-//                    continue;
-//                }
+                // Map<byte[], List<Cell>> curFamilyCellMap =
+                // getMutation(lastIndexExclusive).getFamilyCellMap();
+                // try {
+                // // start the protector before acquiring row lock considering performance, and
+                // will finish
+                // // it when encountering exception
+                // region.storeHotnessProtector.start(curFamilyCellMap);
+                // } catch (RegionTooBusyException rtbe) {
+                // region.storeHotnessProtector.finish(curFamilyCellMap);
+                // if (isAtomic()) {
+                // throw rtbe;
+                // }
+                // retCodeDetails[lastIndexExclusive] =
+                // new OperationStatus(OperationStatusCode.STORE_TOO_BUSY, rtbe.getMessage());
+                // continue;
+                // }
 
                 Mutation mutation = getMutation(lastIndexExclusive);
                 // If we haven't got any rows in our batch, we should block to get the next one.
@@ -1760,14 +1801,14 @@ public class HRegion implements Region {
                     throwException = true;
                     throw throwable;
                 } finally {
-//                    if (throwException) {
-//                        region.storeHotnessProtector.finish(curFamilyCellMap);
-//                    }
+                    // if (throwException) {
+                    // region.storeHotnessProtector.finish(curFamilyCellMap);
+                    // }
                 }
                 if (rowLock == null) {
                     // We failed to grab another lock
                     if (isAtomic()) {
-//                        region.storeHotnessProtector.finish(curFamilyCellMap);
+                        // region.storeHotnessProtector.finish(curFamilyCellMap);
                         throw new IOException("Can't apply all operations atomically!");
                     }
                     break; // Stop acquiring more rows for this batch
@@ -1785,12 +1826,15 @@ public class HRegion implements Region {
             return createMiniBatch(lastIndexExclusive, readyToWriteCount);
         }
 
-        protected MiniBatchOperationInProgress<Mutation> createMiniBatch(final int lastIndexExclusive, final int readyToWriteCount) {
+        protected MiniBatchOperationInProgress<Mutation> createMiniBatch(final int lastIndexExclusive,
+                final int readyToWriteCount) {
             return new MiniBatchOperationInProgress<>(getMutationsForCoprocs(), retCodeDetails,
                     walEditsFromCoprocessors, nextIndexToProcess, lastIndexExclusive, readyToWriteCount);
         }
+
         /**
-         * If necessary, calls preBatchMutate() CP hook for a mini-batch and updates metrics, cell
+         * If necessary, calls preBatchMutate() CP hook for a mini-batch and updates
+         * metrics, cell
          * count, tags and timestamp for all cells of all operations in a mini-batch.
          */
         public abstract void prepareMiniBatchOperations(
@@ -1823,17 +1867,20 @@ public class HRegion implements Region {
                 }
             }
         }
+
         public abstract long getNonceGroup(int index);
 
         public abstract long getNonce(int index);
 
         public abstract boolean isInReplay();
+
         /**
-         * Builds separate WALEdit per nonce by applying input mutations. If WALEdits from CP are
+         * Builds separate WALEdit per nonce by applying input mutations. If WALEdits
+         * from CP are
          * present, they are merged to result WALEdit.
          */
-        public List<Pair<NonceKey, WALEdit>>
-        buildWALEdits(final MiniBatchOperationInProgress<Mutation> miniBatchOp) throws IOException {
+        public List<Pair<NonceKey, WALEdit>> buildWALEdits(final MiniBatchOperationInProgress<Mutation> miniBatchOp)
+                throws IOException {
             List<Pair<NonceKey, WALEdit>> walEdits = new ArrayList<>();
 
             visitBatchOperations(true, nextIndexToProcess + miniBatchOp.size(), new BatchOperation.Visitor() {
@@ -1842,22 +1889,23 @@ public class HRegion implements Region {
                 @Override
                 public boolean visit(int index) throws IOException {
                     Mutation m = getMutation(index);
-//                    // we use durability of the original mutation for the mutation passed by CP.
-//                    if (region.getEffectiveDurability(m.getDurability()) == Durability.SKIP_WAL) {
-//                        region.recordMutationWithoutWal(m.getFamilyCellMap());
-//                        return true;
-//                    }
+                    // // we use durability of the original mutation for the mutation passed by CP.
+                    // if (region.getEffectiveDurability(m.getDurability()) == Durability.SKIP_WAL)
+                    // {
+                    // region.recordMutationWithoutWal(m.getFamilyCellMap());
+                    // return true;
+                    // }
 
-                    // the batch may contain multiple nonce keys (replay case). If so, write WALEdit for each.
+                    // the batch may contain multiple nonce keys (replay case). If so, write WALEdit
+                    // for each.
                     // Given how nonce keys are originally written, these should be contiguous.
-                    // They don't have to be, it will still work, just write more WALEdits than needed.
+                    // They don't have to be, it will still work, just write more WALEdits than
+                    // needed.
                     long nonceGroup = getNonceGroup(index);
                     long nonce = getNonce(index);
-                    if (
-                            curWALEditForNonce == null
-                                    || curWALEditForNonce.getFirst().getNonceGroup() != nonceGroup
-                                    || curWALEditForNonce.getFirst().getNonce() != nonce
-                    ) {
+                    if (curWALEditForNonce == null
+                            || curWALEditForNonce.getFirst().getNonceGroup() != nonceGroup
+                            || curWALEditForNonce.getFirst().getNonce() != nonce) {
                         curWALEditForNonce = new Pair<>(new NonceKey(nonceGroup, nonce),
                                 new WALEdit(miniBatchOp.getCellCount(), isInReplay()));
                         walEdits.add(curWALEditForNonce);
@@ -1881,7 +1929,6 @@ public class HRegion implements Region {
 
     }
 
-
     /**
      * Batch of mutation operations. Base class is shared with
      * {@link ReplayBatchOperation} as most of
@@ -1891,6 +1938,7 @@ public class HRegion implements Region {
         protected boolean canProceed;
         private long nonceGroup;
         private long nonce;
+
         public MutationBatchOperation(final HRegion region, Mutation[] operations, boolean atomic,
                 long nonceGroup, long nonce) {
             super(region, operations);
@@ -1915,9 +1963,12 @@ public class HRegion implements Region {
         }
 
         @Override
-        public MultiVersionConcurrencyControl.WriteEntry writeMiniBatchOperationsToMemStore(MiniBatchOperationInProgress<Mutation> miniBatchOp, MultiVersionConcurrencyControl.WriteEntry writeEntry) throws IOException {
+        public MultiVersionConcurrencyControl.WriteEntry writeMiniBatchOperationsToMemStore(
+                MiniBatchOperationInProgress<Mutation> miniBatchOp,
+                MultiVersionConcurrencyControl.WriteEntry writeEntry) throws IOException {
             return null;
         }
+
         private static Get toGet(final Mutation mutation) throws IOException {
             assert mutation instanceof Increment || mutation instanceof Append;
             Get get = new Get(mutation.getRow());
@@ -1940,18 +1991,22 @@ public class HRegion implements Region {
             }
             return get;
         }
+
         @Override
-        public void prepareMiniBatchOperations(MiniBatchOperationInProgress<Mutation> miniBatchOp, long timestamp, List<RowLock> acquiredRowLocks) throws IOException {
+        public void prepareMiniBatchOperations(MiniBatchOperationInProgress<Mutation> miniBatchOp, long timestamp,
+                List<RowLock> acquiredRowLocks) throws IOException {
             // For nonce operations
         }
 
         /**
          * Starts the nonce operation for a mutation, if needed.
+         * 
          * @return whether to proceed this mutation.
          */
         private boolean startNonceOperation() throws IOException {
             return true;
         }
+
         @Override
         public long getNonceGroup(int index) {
             return -1;
@@ -1961,7 +2016,6 @@ public class HRegion implements Region {
         public long getNonce(int index) {
             return -1;
         }
-
 
         @Override
         public boolean isInReplay() {
@@ -2102,8 +2156,10 @@ public class HRegion implements Region {
 
         static final long HEAP_SIZE = ClassSize.align(ClassSize.OBJECT + 5 * Bytes.SIZEOF_BOOLEAN);
     }
+
     /**
      * Check thread interrupt status and throw an exception if interrupted.
+     * 
      * @throws NotServingRegionException if region is closing
      * @throws InterruptedIOException    if interrupted but region is not closing
      */
@@ -2121,6 +2177,7 @@ public class HRegion implements Region {
     private void lock(final Lock lock) throws IOException {
         lock(lock, 1);
     }
+
     private void lock(final Lock lock, final int multiplier) throws IOException {
         try {
             final long waitTime = Math.min(maxBusyWaitDuration,
@@ -2128,13 +2185,13 @@ public class HRegion implements Region {
             if (!lock.tryLock(waitTime, TimeUnit.MILLISECONDS)) {
                 // Don't print millis. Message is used as a key over in
                 // RetriesExhaustedWithDetailsException processing.
-                final String regionName =
-                        this.getRegionInfo() == null ? "unknown" : this.getRegionInfo().getRegionNameAsString();
+                final String regionName = this.getRegionInfo() == null ? "unknown"
+                        : this.getRegionInfo().getRegionNameAsString();
                 final String serverName = this.getRegionServerServices() == null
                         ? "unknown"
                         : (this.getRegionServerServices().getServerName() == null
-                        ? "unknown"
-                        : this.getRegionServerServices().getServerName().toString());
+                                ? "unknown"
+                                : this.getRegionServerServices().getServerName().toString());
                 RegionTooBusyException rtbe = new RegionTooBusyException(
                         "Failed to obtain lock; regionName=" + regionName + ", server=" + serverName);
                 LOG.warn("Region is too busy to allow lock acquisition.", rtbe);
@@ -2147,6 +2204,7 @@ public class HRegion implements Region {
             throw throwOnInterrupt(ie);
         }
     }
+
     @Override
     public List<Cell> get(Get get, boolean withCoprocessor) throws IOException {
         return get(get, false, HConstants.NO_NONCE, HConstants.NO_NONCE);
@@ -2168,7 +2226,8 @@ public class HRegion implements Region {
             List<Cell> tmp = new ArrayList<>();
             scanner.next(tmp);
             // Copy EC to heap, then close the scanner.
-            // This can be an EXPENSIVE call. It may make an extra copy from offheap to onheap buffers.
+            // This can be an EXPENSIVE call. It may make an extra copy from offheap to
+            // onheap buffers.
             // See more details in HBASE-26036.
             for (Cell cell : tmp) {
                 results.add(CellUtil.cloneIfNecessary(cell));
@@ -2185,7 +2244,7 @@ public class HRegion implements Region {
      * Caller should have the row and region locks.
      */
     private void prepareDeleteTimestamps(Mutation mutation, Map<byte[], List<Cell>> familyMap,
-                                         byte[] byteNow) throws IOException {
+            byte[] byteNow) throws IOException {
         for (Map.Entry<byte[], List<Cell>> e : familyMap.entrySet()) {
 
             byte[] family = e.getKey();
@@ -2198,9 +2257,8 @@ public class HRegion implements Region {
                 Cell cell = cells.get(i);
                 // Check if time is LATEST, change to time of most recent addition if so
                 // This is expensive.
-                if (
-                        cell.getTimestamp() == HConstants.LATEST_TIMESTAMP && org.apache.hadoop.hbase.PrivateCellUtil.isDeleteType(cell)
-                ) {
+                if (cell.getTimestamp() == HConstants.LATEST_TIMESTAMP
+                        && org.apache.hadoop.hbase.PrivateCellUtil.isDeleteType(cell)) {
                     byte[] qual = CellUtil.cloneQualifier(cell);
 
                     Integer count = kvCount.get(qual);

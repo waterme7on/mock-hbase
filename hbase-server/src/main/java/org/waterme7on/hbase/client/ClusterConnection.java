@@ -6,7 +6,9 @@ import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.ClientProtos;
+import org.apache.hadoop.hbase.shaded.protobuf.generated.AdminProtos;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.MasterProtos;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos;
 
 import java.io.IOException;
 
@@ -18,7 +20,13 @@ public interface ClusterConnection extends Connection {
      */
     String HBASE_CLIENT_CONNECTION_IMPL = "hbase.client.connection.impl";
 
+    TableMapProtos.TableLocationService.BlockingInterface getTableMapService() throws IOException;
+
     MasterProtos.MasterService.BlockingInterface getMaster() throws IOException;
+
+    AdminProtos.AdminService.BlockingInterface getMasterAdmin() throws IOException;
+
+    AdminProtos.AdminService.BlockingInterface getAdmin(final ServerName serverName) throws IOException;
 
     ClientProtos.ClientService.BlockingInterface getClient(final ServerName serverName) throws IOException;
 

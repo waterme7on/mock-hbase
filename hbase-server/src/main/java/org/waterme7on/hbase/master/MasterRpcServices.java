@@ -3,7 +3,9 @@ package org.waterme7on.hbase.master;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterMetricsBuilder;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.RegionLocations;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.io.ByteBuffAllocator;
 import org.waterme7on.hbase.ipc.RpcServerInterface;
@@ -71,11 +73,16 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetQuotaSta
 import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetQuotaStatesResponse;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetSpaceQuotaRegionSizesRequest;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.QuotaProtos.GetSpaceQuotaRegionSizesResponse;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos.TableLocationRequest;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos.TableLocationResponse;
+import org.waterme7on.hbase.protobuf.generated.TableMapProtos.TableLocationService;
 import org.apache.hbase.thirdparty.com.google.protobuf.RpcController;
 import org.apache.hbase.thirdparty.com.google.protobuf.ServiceException;
 
 public class MasterRpcServices extends RSRpcServices
-        implements MasterService.BlockingInterface, RegionServerStatusService.BlockingInterface {
+        implements MasterService.BlockingInterface, RegionServerStatusService.BlockingInterface,
+        TableLocationService.BlockingInterface {
     private static final Logger LOG = LoggerFactory.getLogger(MasterRpcServices.class.getName());
 
     private final HMaster master;
@@ -115,6 +122,8 @@ public class MasterRpcServices extends RSRpcServices
                 RegionServerStatusService.BlockingInterface.class));
         bssi.add(new BlockingServiceAndInterface(MasterService.newReflectiveBlockingService(this),
                 MasterService.BlockingInterface.class));
+        bssi.add(new BlockingServiceAndInterface(TableLocationService.newReflectiveBlockingService(this),
+                TableLocationService.BlockingInterface.class));
         bssi.addAll(super.getServices());
         return bssi;
     }
@@ -857,5 +866,18 @@ public class MasterRpcServices extends RSRpcServices
             throws ServiceException {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'flushMasterStore'");
+    }
+
+    @Override
+    public TableLocationResponse tableLocation(RpcController controller, TableLocationRequest request)
+            throws ServiceException {
+        String tableName = request.getTableName();
+        TableLocationResponse.Builder builder = TableLocationResponse.newBuilder();
+        RegionLocations rl = master.getRegionLocation(TableName.valueOf(tableName));
+        if (rl != null) {
+            builder.setRegionName(rl.getRegionLocation().getRegion().getRegionNameAsString());
+            builder.setServerName(rl.getRegionLocation().getServerName().toString());
+        }
+        return builder.build();
     }
 }
